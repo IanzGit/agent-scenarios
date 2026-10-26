@@ -1,0 +1,19 @@
+# 可选：复用原系统的 OpenAI-compatible 网关。凭据只读取环境变量。
+- id: llm-pi-ai
+  config:
+    providers:
+      mine-gateway:
+        displayName: 煤矿模型网关
+        api: openai-completions
+        apiKeyEnv: WATER_HAZARD_MODEL_API_KEY
+        baseURL: !!js process.env.WATER_HAZARD_MODEL_BASE_URL
+        compat:
+          supportsDeveloperRole: false
+          thinkingFormat: qwen
+          chatTemplateKwargs:
+            enable_thinking: false
+        models: !!js "[{ id: process.env.WATER_HAZARD_MODEL_ID, name: process.env.WATER_HAZARD_MODEL_ID, contextWindow: Number(process.env.WATER_HAZARD_MODEL_CONTEXT_WINDOW || 131072), maxTokens: 8192 }]"
+- id: agent-default-model
+  config:
+    provider: mine-gateway
+    model: !!js process.env.WATER_HAZARD_MODEL_ID

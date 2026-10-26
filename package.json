@@ -1,0 +1,61 @@
+{
+  "name": "dsh-agent-scenarios",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" },
+    "./client": { "types": "./lib/types/client/index.d.ts", "default": "./lib/client.js" }
+  },
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": {
+      "platform": "web",
+      "inject": ["@deepseek-ai/dsh-client-locale", "@deepseek-ai/dsh-client-ui-conversation", "@deepseek-ai/dsh-client-ui-chat"]
+    }
+  },
+  "engines": { "node": "^22.19.0 || >=24.0.0", "dsh": ">=0.2.1-rc.2 <0.3.0" },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && tsdown",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "test:web": "tsx --test tests/*.browser.ts",
+    "test:live": "node --env-file-if-exists=.env --import tsx/esm --test tests/real-model.live.ts",
+    "smoke:api": "node --env-file-if-exists=.env --import tsx/esm scripts/smoke-api.ts",
+    "start:web": "node --env-file-if-exists=.env scripts/start-web.mjs"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "link:../deepseek-harness/vendor/cordis",
+    "@deepseek-ai/schemastery": "link:../deepseek-harness/vendor/schemastery",
+    "@deepseek-ai/dsh-tools": "link:../deepseek-harness/packages/core/tools",
+    "@deepseek-ai/dsh-skill": "link:../deepseek-harness/packages/skill/skill",
+    "@deepseek-ai/dsh-skill-filesystem": "link:../deepseek-harness/packages/skill/skill-filesystem",
+    "@deepseek-ai/dsh-system-prompt": "link:../deepseek-harness/packages/core/system-prompt",
+    "echarts": "^6.0.0",
+    "react": "18.3.1",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-llm": "link:../deepseek-harness/packages/llm/llm",
+    "@deepseek-ai/dsh-session": "link:../deepseek-harness/packages/core/session",
+    "@deepseek-ai/dsh-agent": "link:../deepseek-harness/packages/core/agent",
+    "@deepseek-ai/dsh-agent-loop": "link:../deepseek-harness/packages/core/agent-loop",
+    "@deepseek-ai/dsh-session-projection": "link:../deepseek-harness/packages/session/session-projection",
+    "@deepseek-ai/dsh-tool-skill": "link:../deepseek-harness/packages/skill/tool-skill",
+    "@deepseek-ai/dsh-fs-local": "link:../deepseek-harness/packages/fs/fs-local",
+    "@deepseek-ai/dsh-working-directory": "link:../deepseek-harness/packages/session/working-directory",
+    "@deepseek-ai/dsh-workspace": "link:../deepseek-harness/packages/workspace/workspace",
+    "@deepseek-ai/dsh-client-locale": "link:../deepseek-harness/packages/client/locale",
+    "@deepseek-ai/dsh-client-ui-conversation": "link:../deepseek-harness/packages/client/ui-conversation",
+    "@deepseek-ai/dsh-client-ui-chat": "link:../deepseek-harness/packages/client/ui-chat",
+    "@deepseek-ai/dsh-client-ui-slots": "link:../deepseek-harness/packages/client/ui-slots",
+    "@deepseek-ai/dsh-client-ui-renderer": "link:../deepseek-harness/packages/client/ui-renderer",
+    "@types/node": "^22.20.0",
+    "@types/react": "18.3.31",
+    "playwright": "1.61.1",
+    "tsdown": "0.22.2",
+    "tsx": "4.23.13",
+    "typescript": "6.0.3"
+  }
+}

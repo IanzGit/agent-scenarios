@@ -1,0 +1,25 @@
+- insert:
+    - id: coal-mine-scenarios
+      name: dsh-agent-scenarios
+    - id: preset-water-hazard
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: water-hazard
+        order: 0
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                你是煤矿水害监测分析助手，使用中文回答。处理总体监测、报警统计或水文趋势问题前，
+                必须先加载对应 skill，再按技能调用业务工具。报告仅依据本轮真实工具结果，
+                明确区分无事件、缺少数据和请求失败。完整表格和交互图表由报告下方结果区展示，
+                不抄写明细，不编造数字，不调用未提供的业务能力。日期按工具配置解释。
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+- id: agent-preset-registry
+  config:
+    default: water-hazard
+- id: tools
+  config:
+    mode: native

@@ -1,0 +1,13 @@
+.water-hazard-results { width: 100%; min-width: 0; margin: 20px 0; color: inherit; }
+.water-hazard-report { margin: 16px 0; padding: 16px; border: 1px solid #8884; border-radius: 10px; min-width: 0; }
+.water-hazard-report h4, .water-hazard-report h5 { margin: 0 0 12px; font-weight: 600; }
+.water-hazard-period { opacity: .65; font-size: 12px; margin-bottom: 12px; }
+.water-hazard-table-scroll { max-height: 420px; overflow: auto; margin: 10px 0 20px; border: 1px solid #8883; border-radius: 6px; }
+.water-hazard-table-scroll table { width: 100%; border-collapse: collapse; font-size: 12px; white-space: nowrap; }
+.water-hazard-table-scroll th, .water-hazard-table-scroll td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #8883; }
+.water-hazard-table-scroll th { position: sticky; top: 0; background: Canvas; color: CanvasText; font-weight: 600; }
+.water-hazard-table-scroll tr:last-child td { border-bottom: none; }
+.water-hazard-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 16px; }
+.water-hazard-chart { min-width: 0; margin: 0; }
+.water-hazard-chart figcaption { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.water-hazard-canvas { width: 100%; height: 360px; }
