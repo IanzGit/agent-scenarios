@@ -32,6 +32,9 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: link:../deepseek-harness/packages/llm/llm
         version: link:../deepseek-harness/packages/llm/llm
+      '@deepseek-ai/dsh-llm-pi-ai':
+        specifier: link:../deepseek-harness/packages/llm/llm-pi-ai
+        version: link:../deepseek-harness/packages/llm/llm-pi-ai
       '@deepseek-ai/dsh-persona':
         specifier: link:../deepseek-harness/packages/preset/persona
         version: link:../deepseek-harness/packages/preset/persona

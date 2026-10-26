@@ -88,7 +88,7 @@ pnpm start
 DSH_HOME="$PWD/.dsh" node --env-file-if-exists=.env ../deepseek-harness/apps/cli/lib/bin.js web --no-open
 ```
 
-该网关配置使用 Qwen 兼容参数，默认关闭额外思考，单次输出上限8192 tokens；上下文容量通过 `WATER_HAZARD_MODEL_CONTEXT_WINDOW` 指定。完整明细会占用模型上下文和输出额度，实际部署应配置足够容量；工具渲染器不截断表格。
+该网关配置声明 Qwen 模型的推理能力，默认选择 `off`，通过 `chat-template` 协议实际发送 `chat_template_kwargs.enable_thinking=false`，让报告进入正文。单次输出上限默认32768 tokens，可通过 `WATER_HAZARD_MODEL_MAX_TOKENS` 调整；上下文容量通过 `WATER_HAZARD_MODEL_CONTEXT_WINDOW` 指定。完整报警明细可能超过8192 tokens，实际部署应为输入与报告配置足够容量；工具渲染器不截断表格。修改该补丁后重启 `pnpm start`，在新一轮查询中验证；历史会话中的思考块不会自动转换为正文。
 
 | 业务环境变量 | 默认值 |
 | --- | --- |
@@ -130,7 +130,7 @@ DSH_HOME="$PWD/.dsh" node --env-file-if-exists=.env ../deepseek-harness/apps/cli
 
 ## 验证与迁移说明
 
-`pnpm test` 使用固定响应验证业务口径、完整表格、两个场景的 Harness 循环，以及工具、技能、日期提示的 preset 隔离和卸载，不需要密钥或浏览器。
+`pnpm test` 使用固定响应验证业务口径、完整表格、两个场景的 Harness 循环，以及工具、技能、日期提示的 preset 隔离和卸载；模型网关测试通过真实适配器检查关闭思考的请求参数及报告正文，不需要密钥或浏览器。
 
 ```bash
 # 可选：读取 .env 后查询真实水文系统，不调用模型

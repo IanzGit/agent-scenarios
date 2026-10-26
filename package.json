@@ -58,6 +58,7 @@
     "@deepseek-ai/dsh-agent-preset-registry": "link:../deepseek-harness/packages/preset/agent-preset-registry",
     "@deepseek-ai/dsh-fs-local": "link:../deepseek-harness/packages/fs/fs-local",
     "@deepseek-ai/dsh-llm": "link:../deepseek-harness/packages/llm/llm",
+    "@deepseek-ai/dsh-llm-pi-ai": "link:../deepseek-harness/packages/llm/llm-pi-ai",
     "@deepseek-ai/dsh-session": "link:../deepseek-harness/packages/core/session",
     "@deepseek-ai/dsh-session-projection": "link:../deepseek-harness/packages/session/session-projection",
     "@deepseek-ai/dsh-skill": "link:../deepseek-harness/packages/skill/skill",
