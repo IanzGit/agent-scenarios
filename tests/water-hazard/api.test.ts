@@ -1,8 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { WaterHazardAPI } from '../src/water-hazard/api.ts'
-import { resolveSettings } from '../src/water-hazard/config.ts'
-import { mockBusiness } from './fixtures.ts'
+import { WaterHazardAPI } from '../../src/scenarios/water-hazard/api.ts'
+import { resolveSettings } from '../../src/scenarios/water-hazard/config.ts'
+import { mockBusiness } from '../fixtures/water-hazard.ts'
 
 test('仅网络和 HTTP 5xx 重试，业务错误、4xx 及非 JSON 立即失败', async () => {
   let attempts = 0

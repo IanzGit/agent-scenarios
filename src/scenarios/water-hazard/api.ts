@@ -1,6 +1,6 @@
 /** 水文系统只读接口，统一表单 POST、重试、取消和分页完整性检查。 */
 import { setTimeout as delay } from 'node:timers/promises'
-import type { Period } from '../shared.ts'
+import type { Period } from '../../shared/result.ts'
 import { dateValue, type Settings } from './config.ts'
 
 export type ApiRow = Record<string, unknown>
@@ -66,7 +66,7 @@ export class WaterHazardAPI {
             Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded',
             ...(this.settings.apiToken.trim() ? { Authorization: `Bearer ${this.settings.apiToken.trim()}` } : {}),
           },
-          body: new URLSearchParams(Object.entries(payload).map(([key, value]) => [key, String(value)])),
+          body: new URLSearchParams(Object.entries(payload).map(([key, value]): [string, string] => [key, String(value)])),
           signal: AbortSignal.any([signal, AbortSignal.timeout(this.settings.apiTimeoutSeconds * 1000)]),
         })
       } catch (error) {
@@ -161,5 +161,19 @@ export class WaterHazardAPI {
   async realtime(signal: AbortSignal): Promise<ApiRow[]> {
     const path = '/app/api/screenData/getSensorSSData.action'
     return rows(await this.post(path, { screenId: this.settings.monitorScreenId }, signal), path)
+  }
+}
+
+/** API 可选显示字段，缺失时使用明确占位文字。 */
+export function text(value: unknown, missing = '未取得'): string {
+  return value === null || value === undefined || value === '' ? missing : String(value)
+}
+
+/** 补充配置失败时保留主结果；取消和编程错误继续传播。 */
+export async function supplement<T>(load: () => Promise<T>, fallback: T, signal: AbortSignal): Promise<T> {
+  try { return await load() } catch (error) {
+    signal.throwIfAborted()
+    if (!(error instanceof WaterHazardAPIError)) throw error
+    return fallback
   }
 }

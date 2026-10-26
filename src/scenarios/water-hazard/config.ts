@@ -1,4 +1,6 @@
 /** 部署配置；显式插件配置优先于环境变量和原系统默认值。 */
+import z from '@deepseek-ai/schemastery'
+
 export const DEFAULT_SENSORS = {
   inflow: '297ed746965ca5df01965cf6e35f0001',
   drainage: '297ed746965ca5df01965d02e1ca0009',
@@ -17,6 +19,12 @@ export interface Settings {
   sensors: typeof DEFAULT_SENSORS
 }
 export type SettingsInput = Partial<Omit<Settings, 'sensors'>> & { sensors?: Partial<Settings['sensors']> }
+
+export const Config = z.object({
+  apiBaseUrl: z.string(), monitorScreenId: z.string(), warningScreenId: z.string(), conversationDate: z.string(),
+  apiTimeoutSeconds: z.number(), apiMaxRetries: z.number(), apiRetryBackoffSeconds: z.number(), apiToken: z.string(),
+  sensors: z.object({ inflow: z.string(), drainage: z.string(), borehole: z.string(), sump: z.string() }),
+})
 
 /** 校验真实的 YYYY-MM-DD 日历日期，返回 UTC 毫秒供自然日计算。 */
 export function dateValue(value: string): number {

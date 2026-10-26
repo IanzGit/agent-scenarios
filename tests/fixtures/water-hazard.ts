@@ -1,7 +1,9 @@
 /** 固定接口响应；不依赖 Python 服务或真实网络。 */
-import { WaterHazardAPI, type ApiRow } from '../src/water-hazard/api.ts'
-import { WaterHazardBusiness } from '../src/water-hazard/business.ts'
-import { resolveSettings } from '../src/water-hazard/config.ts'
+import { WaterHazardAPI, type ApiRow } from '../../src/scenarios/water-hazard/api.ts'
+import { deviceStatus } from '../../src/scenarios/water-hazard/services/devices.ts'
+import { deviceAlarm, modelWarning, warningStatistics } from '../../src/scenarios/water-hazard/services/warnings.ts'
+import { hydrologicalTrend } from '../../src/scenarios/water-hazard/services/trends.ts'
+import { resolveSettings } from '../../src/scenarios/water-hazard/config.ts'
 
 export type Request = { path: string; form: URLSearchParams; init?: RequestInit }
 export function mockBusiness(handler: (request: Request) => unknown | Promise<unknown>) {
@@ -14,7 +16,13 @@ export function mockBusiness(handler: (request: Request) => unknown | Promise<un
   }
   const settings = resolveSettings({ apiBaseUrl: 'http://fixture', apiRetryBackoffSeconds: 0 }, {})
   const api = new WaterHazardAPI(settings, fetcher)
-  return { api, business: new WaterHazardBusiness(api), requests }
+  return { api, business: {
+    deviceStatus: (signal: AbortSignal) => deviceStatus(api, signal),
+    deviceAlarm: (signal: AbortSignal) => deviceAlarm(api, signal),
+    modelWarning: (signal: AbortSignal) => modelWarning(api, signal),
+    warningStatistics: (signal: AbortSignal) => warningStatistics(api, signal),
+    hydrologicalTrend: (signal: AbortSignal, start?: string, end?: string) => hydrologicalTrend(api, signal, start, end),
+  }, requests }
 }
 export function event(id: string, fields: ApiRow = {}): ApiRow {
   return { warnEventId: id, sourceId: 'sensor', sourceType: 1, name: '测点报警', warnDate: '2026-08-03 00:00:00.0000', riskLevel: '蓝色预警', value: '1.20', isPositive: '否', state: '已处置', labelName: '涌水量预警', ...fields }

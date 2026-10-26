@@ -1,7 +1,7 @@
-/** 将固定业务响应暴露为只读 POST 接口，供真实工具和浏览器端到端测试。 */
+/** 将固定业务响应暴露为只读 POST 接口，供 Harness 集成测试。 */
 import { createServer } from 'node:http'
 import { once } from 'node:events'
-import { scenarioFixture } from './fixtures.ts'
+import { scenarioFixture } from './water-hazard.ts'
 
 export async function startFixtureServer() {
   const fixture = scenarioFixture()

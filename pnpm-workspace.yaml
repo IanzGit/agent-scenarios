@@ -1,0 +1,3 @@
+# 单包项目；仅允许 tsx 所需的 esbuild 执行依赖安装脚本。
+allowBuilds:
+  esbuild: true

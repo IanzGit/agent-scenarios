@@ -1,10 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { resolveSettings, dateValue } from '../src/water-hazard/config.ts'
-import { resolvePeriod } from '../src/water-hazard/api.ts'
-import { monitoringValue } from '../src/water-hazard/business.ts'
-import { presentation, parseReport } from '../src/shared.ts'
-import { event, mockBusiness, scenarioFixture, statistics } from './fixtures.ts'
+import { resolveSettings, dateValue } from '../../src/scenarios/water-hazard/config.ts'
+import { resolvePeriod } from '../../src/scenarios/water-hazard/api.ts'
+import { monitoringValue } from '../../src/scenarios/water-hazard/services/trends.ts'
+import { event, mockBusiness, scenarioFixture, statistics } from '../fixtures/water-hazard.ts'
 
 const signal = () => new AbortController().signal
 
@@ -45,7 +44,6 @@ test('设备按两种分类关联并按设备和传感器去重，未知状态�
   })
   const report = await business.deviceStatus(signal())
   assert.deepEqual(report.tables[0].rows.at(-1), { 设备区域: '合计', 设备类型: '', 设备数量: 2, 在线设备数量: 1, 离线设备数量: 1 })
-  assert.equal(report.charts[0].hasData, true)
 })
 
 test('事件 ID 去重、首尾日期包含、全部状态保留；四级阈值保留精度和零', async () => {
@@ -87,18 +85,18 @@ test('多因素配置和准则完整翻页，同一来源只描述一次，不�
   assert.equal(report.tables[0].columns.includes('当前值'), false)
 })
 
-test('统计三张图来自相同数据，分类按优先级且缺事件日补零', async () => {
+test('统计三张表来自相同数据，分类按优先级且缺事件日补零', async () => {
   const events = [event('a', { labelName: '排水量预警,涌水量预警' }), event('b', { riskLevel: '红色预警', warnDate: '2026-09-01 23:59:59', labelName: '多因素' })]
   const { business, requests } = mockBusiness(() => statistics(events))
   const report = await business.warningStatistics(signal())
-  assert.equal(report.data.预警事件总数, 2)
-  assert.equal(report.charts.length, 3)
-  const daily = report.data.按时间统计
+  assert.match(report.summary, /共2条事件/)
+  assert.equal(report.tables.length, 3)
+  const daily = report.tables[2].rows
   assert.ok(Array.isArray(daily))
   assert.equal(daily.length, 30)
-  assert.deepEqual(daily[1], { name: '2026-08-04', value: 0 })
-  assert.ok(Array.isArray(report.data.按类型统计))
-  assert.deepEqual(report.data.按类型统计[0], { name: '涌水量', value: 1 })
+  assert.deepEqual(daily[1], { 日期: '2026-08-04', 事件数量: 0 })
+  assert.deepEqual(report.tables[0].rows[0], { 预警类型: '涌水量', 事件数量: 1 })
+  assert.ok(report.tables.every(table => table.rows.reduce((total, row) => total + Number(row.事件数量), 0) === 2))
   assert.equal(requests[0].form.get('stopTime'), '2026-09-01 23:59:59')
 })
 
@@ -107,7 +105,7 @@ test('统计数量不一致和越界事件报错；空统计不生成百分比',
     await assert.rejects(mockBusiness(() => data).business.warningStatistics(signal()))
   }
   const report = await mockBusiness(() => statistics([])).business.warningStatistics(signal())
-  assert.ok(report.charts.every(chart => !chart.hasData))
+  assert.ok(report.tables.every(table => table.rows.every(row => row.事件数量 === 0)))
   assert.match(report.summary, /无预警统计事件/)
 })
 
@@ -121,9 +119,13 @@ test('趋势保留原始精度、重复时间和断点，警告按测点和事�
     ] } : { unit: '', data: [] }
   })
   const report = await business.hydrologicalTrend(signal())
-  assert.equal(report.charts.length, 1)
-  assert.ok(Array.isArray(report.charts[0].option.series))
-  assert.deepEqual(report.charts[0].option.series[0], { name: '涌水量(m³/h)', type: 'line', data: [0, 1.23456, 3.54321, null], connectNulls: false, showSymbol: false, lineStyle: { color: '#1f77b4', type: 'solid' }, itemStyle: { color: '#1f77b4' } })
+  assert.equal(report.series.length, 1)
+  assert.deepEqual(report.series[0], { name: '涌水量', unit: 'm³/h', source: '矿井总涌水量', sensor: '涌水量', points: [
+    { time: '2026-08-03 00:00:00', value: 0 },
+    { time: '2026-08-03 00:00:00', value: 1.23456 },
+    { time: '2026-08-04 00:00:00', value: 3.54321 },
+    { time: '2026-08-05 00:00:00', value: null },
+  ] })
   assert.equal(report.tables[0].rows[0].有效记录数, 3)
   assert.equal(report.tables[0].rows[0].最大值, 3.54321)
   assert.equal(report.tables[0].rows[0].预警次数, 2)
@@ -150,13 +152,13 @@ test('缺单位不会丢弃历史；预警查询失败和全空趋势明确失�
   assert.equal(monitoringValue('0xFF'), null)
 })
 
-test('全部五类结果可持久化恢复，展示元数据不复制旧业务数据', async () => {
+test('五类结果只保留一份表格，均可无损 JSON 序列化', async () => {
   const { business } = scenarioFixture()
   const reports = await Promise.all([business.deviceStatus(signal()), business.deviceAlarm(signal()), business.modelWarning(signal()), business.warningStatistics(signal()), business.hydrologicalTrend(signal())])
   for (const report of reports) {
-    const metadata = presentation(report)
-    assert.equal('data' in metadata.waterHazard, false)
-    assert.deepEqual(parseReport(JSON.parse(JSON.stringify(metadata))), metadata.waterHazard)
+    assert.equal('data' in report, false)
+    assert.equal('charts' in report, false)
+    assert.equal('version' in report, false)
+    assert.deepEqual(JSON.parse(JSON.stringify(report)), report)
   }
-  assert.equal(parseReport({ waterHazard: { version: 999 } }), undefined)
 })
