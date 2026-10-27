@@ -1,45 +1,49 @@
 # 煤矿场景工具与技能插件
 
-`dsh-agent-scenarios` 是一个标准的 DeepSeek Harness Host 插件包。每个业务领域使用独立的源码目录、技能目录和 preset；目前提供水害领域的五个工具和两个技能。业务代码全部为 TypeScript，直接查询现有水文接口，不依赖原 Python 服务。
+`dsh-agent-scenarios` 是一个标准的 DeepSeek Harness 插件包。每个业务领域使用独立的源码目录、技能目录和 preset；目前提供水害领域的五个查询工具、两个技能，以及五种通用图表工具。业务代码全部为 TypeScript，直接查询现有水文接口；通用图表由独立的标准 Host＋Client 插件 `dsh-agent-charts` 提供，不依赖原 Python 服务。
 
 ## 目录与职责
 
 ```text
 agent-scenarios/
-├── package.json                     # bundle、子入口、运行时 peers 和发布文件
-├── cordis.patch.yml                 # 领域 preset 及其工具、persona、技能加载器
-├── tsconfig*.json                   # 类型检查与 ESM 编译
-├── pnpm-workspace.yaml              # 单包的依赖构建权限，仅允许 esbuild
-├── config/
-│   └── openai-compatible.patch.yml  # 可选模型网关配置
+├── package.json                     # 业务包入口、领域子入口及 bundle
+├── cordis.patch.yml                 # 公共图表服务与领域 preset 组合
+├── pnpm-workspace.yaml              # packages/* 工作区
+├── config/                         # 可选模型网关配置
 ├── src/
-│   ├── index.ts                     # 包根入口，转出水害插件
+│   ├── index.ts                     # 保留水害插件根入口
 │   ├── shared/
-│   │   └── result.ts                # 共用表格、输出 schema、Markdown 渲染
-│   └── scenarios/
-│       └── water-hazard/
-│           ├── index.ts             # name / inject / Config / apply
-│           ├── config.ts            # 部署配置、参考日期和测点映射
-│           ├── api.ts               # 表单 POST、分页、校验、重试和取消
-│           ├── tools.ts             # 五个 defineTool 定义
-│           └── services/
-│               ├── devices.ts       # 设备分类与在线离线统计
-│               ├── warnings.ts      # 单因素、模型预警及统计页数据
-│               └── trends.ts        # 原始历史、周期统计和测点预警次数
-├── skills/
-│   └── water-hazard/
-│       ├── water-hazard-overview/SKILL.md
-│       └── water-hazard-trend/SKILL.md
-└── tests/
-    ├── water-hazard/                # HTTP 和业务口径回归
-    ├── shared/                      # 完整 Markdown 表格输出
-    ├── integration/                 # preset 隔离、工具调用及可选真实接口
-    └── fixtures/                    # 固定接口和模型响应
+│   │   ├── result.ts               # 通用业务结果与完整 Markdown 表格
+│   │   └── chart-result.ts         # 图表输出协议、结果渲染与来源挂接
+│   └── scenarios/water-hazard/
+│       ├── index.ts                 # 业务插件注册
+│       ├── api.ts / config.ts       # 接口与部署配置
+│       ├── tools.ts                 # 五个业务查询工具定义与调用编排
+│       └── services/                # 设备、报警、统计和趋势取数、计算与数据集适配
+├── skills/<领域>/                   # 工具选择、图表要求和报告规则
+├── packages/charts/                 # dsh-agent-charts 标准插件
+│   ├── package.json                 # . / tools / types / client 公开入口
+│   ├── src/
+│   │   ├── index.ts                 # Host 入口，注册 ctx.chartSources
+│   │   ├── service.ts               # 来源授权、轮次隔离及资源释放
+│   │   ├── types.ts / schemas.ts    # 场景无关的图表协议
+│   │   ├── tools/
+│   │   │   ├── index.ts             # preset 内的工具插件入口
+│   │   │   ├── common.ts            # 公共参数、输出及数据处理
+│   │   │   └── line.ts / bar.ts / pie.ts / stacked-bar.ts / scatter.ts
+│   │   └── client/
+│   │       ├── index.ts             # 客户端注册
+│   │       ├── Charts.tsx           # 图表列表和 ECharts 实例
+│   │       ├── conversation.ts      # 会话结果投影与回放
+│   │       └── styles.css           # 展示样式
+│   ├── tests/                       # 图表及服务生命周期测试
+│   └── esbuild.config.mjs           # 浏览器 factory 构建
+└── tests/                           # 业务、插件集成和浏览器测试
 ```
 
-`src/scenarios/<领域>/index.ts` 是该领域的插件入口，只做配置解析和注册。`tools.ts` 负责 Harness 参数及结果校验，`services/` 负责取数和确定性计算。`skills/` 负责工具选择、调用顺序、报告章节及异常说明。
+`src/scenarios/<领域>/index.ts` 是该领域的插件入口，只做配置解析和注册。`tools.ts` 负责工具定义、输出配置及业务调用编排；图表输出协议、结果渲染与来源挂接统一由 `shared/chart-result.ts` 提供。`services/` 负责取数、确定性计算及对应业务的数据集适配；适配函数与业务函数放在同一文件，业务函数不依赖工具执行上下文。`skills/` 负责工具选择、调用顺序、报告章节及异常说明。
 
-业务工具、技能提供器和参考日期提示均注册在 `water-hazard` preset 内，其他 preset 不会看到这些能力。公共目录只保留当前确实共用的结果定义和 Markdown 渲染，没有额外路由、动态发现或场景注册框架。
+业务包单向依赖图表插件的公开入口；图表插件不导入任何业务场景。业务工具、图表工具、技能和参考日期提示均注册在 `water-hazard` preset 内；图表服务通过裸包名全局加载，只有场景显式提交的成功查询才成为可绘图来源。公共目录只保留业务结果、表格与图表输出适配，没有额外路由、动态发现或场景注册框架。
 
 ## 构建与安装
 
@@ -53,7 +57,7 @@ pnpm test
 pnpm build
 ```
 
-`pnpm build` 清除旧产物后通过 TypeScript 直接编译到 `lib/`，不依赖 Harness 内部构建脚本。发布内容只包含编译结果、技能、配置和 bundle patch。
+`pnpm build` 先构建图表插件的 Host、声明文件与 Client，再编译业务包。两个包各自拥有依赖及 `lib/` 产物；`pnpm typecheck` 先准备图表包的公开声明，再分别检查 Host、Client、业务和浏览器测试。图表插件使用 esbuild 生成标准的 Harness lazy-CJS factory，不依赖 Harness 内部构建脚本。通过 workspace 依赖开发，通过 `bundledDependencies` 随业务包发布；`pnpm pack` 包含完整图表插件。
 
 有已安装的 `dsh` 时，使用官方命令安装到 Web profile：
 
@@ -113,9 +117,35 @@ DSH_HOME="$PWD/.dsh" node --env-file-if-exists=.env ../deepseek-harness/apps/cli
 | `get_warning_statistics` | `{}` | 类型、等级、每日事件数量统计表 |
 | `get_hydrological_trend` | `{start_time?, end_time?}` | 四项指标统计、预警次数及原始时间序列 |
 
-统一结果为 `title / summary / period? / tables`，趋势额外返回 `series`。每个表格包含 `title / columns / rows`；原始序列包含 `name / unit / source / sensor / points`。`output.render` 输出摘要和全部 Markdown 表格，数值最多显示两位小数，字符串阈值保留原始精度。`series` 供程序化调用使用，不展开到模型文本，也不作为额外元数据持久化。
+统一业务结果为 `title / summary / period? / tables`，趋势额外返回 `series`。每个表格包含 `title / columns / rows`；原始序列包含 `name / unit / source / sensor / points`。`output.render` 输出摘要和全部 Markdown 表格，数值最多显示两位小数，字符串阈值保留原始精度。`series` 供程序化调用使用，不展开到模型文本。
 
-技能指导智能体按章节引用工具结果和完整表格。工具结果文本由 Harness 的默认工具视图和会话记录保存，没有自定义客户端、图表、结果卡片或展示协议。
+活动会话中，设备、预警统计和趋势查询额外返回 `chart_source` 目录：`source_id` 和每个数据集的 `id / title / columns / row_count`。只有最终成功的工具结果才发布来源；数据缓存按会话和轮次隔离，轮次结束后释放。无活动会话的程序化业务调用继续返回原有结果。
+
+### 图表工具与展示
+
+| 工具 | 用途 | 额外约束 |
+| --- | --- | --- |
+| `render_line_chart` | 时间趋势 | 横轴为时间，保留重复点和空值断点，支持时间轴缩放 |
+| `render_bar_chart` | 分类对比 | 使用业务已汇总的数据，可选系列字段 |
+| `render_pie_chart` | 类别占比 | 数值非负、总值大于零，允许单类别 |
+| `render_stacked_bar_chart` | 分类构成 | 必须提供系列字段，各系列使用数据集声明的同一单位 |
+| `render_scatter_chart` | 逐行数值分布 | 数值横轴、分类纵轴，保留同分类的多条记录 |
+
+公共参数为 `source_id / dataset_id / title / x_field / value_field`，折线及柱状工具另支持 `series_field`（堆叠必填）。单位由数据集数值字段提供。工具不接收模型编写的数据数组或 ECharts option，不重新取数、聚合或采样；重复类别需由业务层先行汇总。空数据或占比总量为零返回 `no_data`，非法字段和不可用来源明确失败。
+
+设备类型按区域汇总后绘制一张饼图；预警类型、等级各一张饼图，每日数量一张柱状图。趋势的涌水量、排水量、ZK4水位、中央水仓水位各一张独立折线图。两个 skill 规定这些调用关系；用户只问单项时只生成相关图。
+
+图表工具向模型输出图表 ID、标题、状态和摘要；完整配置存于 `output.presentationMeta` 的 `agentScenariosChart` 版本1载荷，随 Harness 会话记录保存。图表插件的 Client 通过 `conversation.chat.turnTail` 在报告末尾集中展示，支持悬浮提示、图例切换、缩放、主题与容器尺寸变化。刷新和历史查看从工具结果恢复，无需重新查询或调用模型；同一来源、参数和图表类型产生稳定 ID，重复调用不重复展示。
+
+图表插件的三个入口职责固定：
+
+| 入口 | 职责 |
+| --- | --- |
+| `dsh-agent-charts` | 全局 Host 服务，导出 `ChartSources`、数据集类型和来源目录 schema；不注册模型工具 |
+| `dsh-agent-charts/tools` | 在调用者 preset 内注册五类图表工具 |
+| `dsh-agent-charts/client` | 标准浏览器入口，由 `dsh.client` 自动加载，与 Host 共用纯数据协议 |
+
+图表服务拥有全部来源缓存和会话监听；业务插件仅声明 `inject: ['tools', 'skills', 'systemPrompt', 'chartSources']`，使用 `ctx.chartSources.prepare(exec, datasets)` 返回目录。业务工具不管理图表服务的生命周期，通用表格模块也不依赖图表协议。
 
 业务口径保持原实现：默认含参考日在内30个自然日；趋势显式日期成对提供，含首尾且最多31天。报警按事件ID去重，保留全部处置及误报状态；阈值按蓝黄橙红顺序，补充配置失败保留事件。统计页总数与等级明细严格核对，缺事件日期补零。趋势保留原始精度、重复时间点和空值，统计使用有限值，缺单位显示“单位未提供”。主接口失败明确报错，不用空结果替代。
 
@@ -125,20 +155,24 @@ DSH_HOME="$PWD/.dsh" node --env-file-if-exists=.env ../deepseek-harness/apps/cli
 
 1. 在 `src/scenarios/<领域>/` 增加插件入口、配置、工具与业务模块。
 2. 在 `skills/<领域>/` 增加标准 `SKILL.md`，由该领域插件注册该目录。
-3. 在 `package.json` 增加对应领域子入口，在 `cordis.patch.yml` 增加其 preset，将业务插件、persona 和技能加载工具放入该 preset。
-4. 新增该领域的业务及隔离测试；通用表格继续复用 `shared/result.ts`，不改已有领域。
+3. 在 `package.json` 增加领域子入口，在 `cordis.patch.yml` 增加 preset，将业务插件、persona 和技能加载工具放入该 preset。
+4. 需要图表时在该 preset 加载 `dsh-agent-charts/tools`；在对应的业务服务文件中将查询结果适配为 `ChartDataset[]`，在工具定义中复用 `shared/chart-result.ts` 的输出协议与渲染函数，并通过 `withChartSource` 发布来源目录。在 skill 中指定数据集和图表工具的对应关系。
+5. 新增该领域的业务及隔离测试。无需修改公共图表插件、Client 或其他场景；通用表格继续复用 `shared/result.ts`。
 
 ## 验证与迁移说明
 
-`pnpm test` 使用固定响应验证业务口径、完整表格、两个场景的 Harness 循环，以及工具、技能、日期提示的 preset 隔离和卸载；模型网关测试通过真实适配器检查关闭思考的请求参数及报告正文，不需要密钥或浏览器。
+`pnpm test` 先运行图表插件自身测试，再验证业务口径、完整表格、数据集适配、完整 Harness 调用链，以及两个场景共享服务时的来源隔离和独立卸载。模型网关测试通过真实适配器检查关闭思考的请求参数及报告正文，不需要密钥或浏览器。
 
 ```bash
 # 可选：读取 .env 后查询真实水文系统，不调用模型
 pnpm test:live
 # 检查标准插件的打包内容
 pnpm pack
+# 首次安装浏览器后验证真实 Web 交互和刷新回放（独立临时 profile，无需密钥）
+pnpm exec playwright install chromium
+pnpm test:browser
 ```
 
-本次重构保留工具名、参数、技能名、环境变量和默认参考日期；结构化结果改为上述字段，移除旧 `version / data / charts` 副本及 `meta.waterHazard`。新报告直接使用 Markdown，旧会话中的自定义图表不再渲染，历史数据不转换。
+保留业务工具名、参数、技能名、环境变量和默认参考日期。本次结构重构保持图表工具名称、参数、来源目录及 `agentScenariosChart` 版本1协议，原有新图表会话仍可回放。旧 `meta.waterHazard` 图表不转换，缺少新元数据的历史记录继续显示原有文本和表格。仅生成图表所需的数据进入持久展示载荷，业务原始 `series` 不另存一份。
 
 已移除 `pnpm start:web / test:web / smoke:api`；安装启动改用官方 CLI，真实接口检查统一为 `test:live`。旧版针对全局 `coal-mine-scenarios` 的配置应移到水害 preset 内的 `water-hazard-tools` 条目。已有 `.env`、`.dsh` 和 `temp/new.md` 保留，Harness 源码不变。

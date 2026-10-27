@@ -36,19 +36,26 @@
   },
   "scripts": {
     "start": "DSH_HOME=\"$PWD/.dsh\" node --env-file-if-exists=.env ../deepseek-harness/apps/cli/lib/bin.js web --patch \"$PWD/config/openai-compatible.patch.yml\" --no-open",
-    "build": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('lib', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
-    "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/**/*.test.ts",
+    "build": "pnpm --filter dsh-agent-charts build && node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('lib', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
+    "typecheck": "pnpm --filter dsh-agent-charts build:host && pnpm --filter dsh-agent-charts typecheck && tsc --noEmit && tsc -p tests/browser/tsconfig.json",
+    "test": "pnpm --filter dsh-agent-charts test && tsx --test tests/**/*.test.ts",
+    "test:browser": "tsx --test tests/browser/*.browser.ts",
     "test:live": "node --env-file-if-exists=.env --import tsx/esm --test tests/integration/*.live.ts"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.5",
-    "@deepseek-ai/schemastery": "^3.18.5",
-    "@deepseek-ai/dsh-tools": "0.2.1-rc.2",
     "@deepseek-ai/dsh-skill": "0.2.1-rc.2",
     "@deepseek-ai/dsh-skill-filesystem": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-system-prompt": "0.2.1-rc.2"
+    "@deepseek-ai/dsh-system-prompt": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.2",
+    "@deepseek-ai/schemastery": "^3.18.5"
   },
+  "dependencies": {
+    "dsh-agent-charts": "workspace:*"
+  },
+  "bundledDependencies": [
+    "dsh-agent-charts"
+  ],
   "devDependencies": {
     "@deepseek-ai/cordis": "link:../deepseek-harness/vendor/cordis",
     "@deepseek-ai/cordis-plugin-loader": "link:../deepseek-harness/vendor/loader",
@@ -59,6 +66,7 @@
     "@deepseek-ai/dsh-fs-local": "link:../deepseek-harness/packages/fs/fs-local",
     "@deepseek-ai/dsh-llm": "link:../deepseek-harness/packages/llm/llm",
     "@deepseek-ai/dsh-llm-pi-ai": "link:../deepseek-harness/packages/llm/llm-pi-ai",
+    "@deepseek-ai/dsh-persona": "link:../deepseek-harness/packages/preset/persona",
     "@deepseek-ai/dsh-session": "link:../deepseek-harness/packages/core/session",
     "@deepseek-ai/dsh-session-projection": "link:../deepseek-harness/packages/session/session-projection",
     "@deepseek-ai/dsh-skill": "link:../deepseek-harness/packages/skill/skill",
@@ -68,10 +76,11 @@
     "@deepseek-ai/dsh-tools": "link:../deepseek-harness/packages/core/tools",
     "@deepseek-ai/dsh-working-directory": "link:../deepseek-harness/packages/session/working-directory",
     "@deepseek-ai/schemastery": "link:../deepseek-harness/vendor/schemastery",
+    "@playwright/test": "1.64.1",
     "@types/node": "^22.20.0",
+    "@types/react": "^18.3.31",
     "tsx": "4.23.13",
     "typescript": "6.0.3",
-    "yaml": "^2.4.2",
-    "@deepseek-ai/dsh-persona": "link:../deepseek-harness/packages/preset/persona"
+    "yaml": "^2.4.2"
   }
 }

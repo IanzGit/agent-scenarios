@@ -1,0 +1,25 @@
+.agent-scenarios-charts {
+  width: 100%;
+  min-width: 0;
+  color: inherit;
+}
+
+.agent-scenarios-chart {
+  margin: 16px 0 24px;
+}
+
+.agent-scenarios-chart-canvas {
+  height: 400px;
+  width: 100%;
+  min-width: 0;
+}
+
+.agent-scenarios-chart figcaption {
+  font-size: 12px;
+  opacity: .75;
+  margin-top: 8px;
+}
+
+@media (max-width: 600px) {
+  .agent-scenarios-chart-canvas { height: 340px; }
+}

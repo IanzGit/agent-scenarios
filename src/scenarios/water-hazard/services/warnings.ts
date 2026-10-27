@@ -1,4 +1,5 @@
 /** 单因素、模型预警及统计页数据，保留原系统事件与阈值口径。 */
+import type { ChartDataset } from 'dsh-agent-charts'
 import { result, table, type Period, type Row, type ToolResult } from '../../../shared/result.ts'
 import { WaterHazardAPI, WaterHazardAPIError, calendarDate, count, requiredText, resolvePeriod, rows, supplement, text, type ApiRow } from '../api.ts'
 import { dateValue } from '../config.ts'
@@ -106,4 +107,14 @@ export async function warningStatistics(api: WaterHazardAPI, signal: AbortSignal
     table('按等级统计', ['预警等级', '事件数量'], levelStats.map(item => ({ 预警等级: item.name, 事件数量: item.value }))),
     table('按时间统计', ['日期', '事件数量'], dailyStats.map(item => ({ 日期: item.name, 事件数量: item.value }))),
   ], period)
+}
+
+/** 三张统计表直接引用已校验的统计页数据，保留日期补零。 */
+export function warningDatasets(value: ToolResult): ChartDataset[] {
+  return value.tables.map((item, index) => ({
+    id: ['warning_types', 'warning_levels', 'warning_daily'][index],
+    title: ['预警事件类型占比', '预警事件等级占比', '每日预警事件数量'][index],
+    columns: [{ name: index === 2 ? 'time' : 'category', title: item.columns[0], type: index === 2 ? 'time' : 'category' }, { name: 'value', title: '事件数量', type: 'number', unit: '条' }],
+    rows: item.rows.map(row => ({ [index === 2 ? 'time' : 'category']: row[item.columns[0]], value: row[item.columns[1]] })),
+  }))
 }

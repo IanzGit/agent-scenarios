@@ -1,3 +1,5 @@
-# 单包项目；仅允许 tsx 所需的 esbuild 执行依赖安装脚本。
+# 业务插件与通用图表插件；只允许 esbuild 执行安装脚本。
+packages:
+  - packages/*
 allowBuilds:
   esbuild: true

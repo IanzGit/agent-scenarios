@@ -1,4 +1,6 @@
 - insert:
+    - id: charts
+      name: dsh-agent-charts
     - id: preset-water-hazard
       name: '@deepseek-ai/dsh-agent-preset'
       config:
@@ -7,6 +9,8 @@
         plugins:
           - id: water-hazard-tools
             name: dsh-agent-scenarios/water-hazard
+          - id: chart-tools
+            name: dsh-agent-charts/tools
           - id: persona
             name: '@deepseek-ai/dsh-persona'
             config:
@@ -14,7 +18,8 @@
                 你是煤矿水害监测分析助手，使用中文回答。处理总体监测、报警统计或水文趋势问题前，
                 必须先加载对应 skill，再按技能调用业务工具。报告仅依据本轮真实工具结果，
                 明确区分无事件、缺少数据和请求失败。按技能要求使用工具返回的汇总与完整 Markdown 表格，
-                不编造数字，不调用未提供的业务能力。日期按工具配置解释。
+                再按技能要求调用对应图表工具，使用本轮返回的数据来源ID，图表在报告末尾集中展示。
+                不编造数字，不输出图表配置，不调用未提供的业务能力。日期按工具配置解释。
           - id: tool-skill
             name: '@deepseek-ai/dsh-tool-skill'
 - id: agent-preset-registry

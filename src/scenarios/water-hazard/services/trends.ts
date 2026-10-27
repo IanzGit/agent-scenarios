@@ -1,4 +1,5 @@
 /** 四个水文测点的原始历史、周期统计及预警次数。 */
+import type { ChartDataset } from 'dsh-agent-charts'
 import { result, table, type Row, type ToolResult } from '../../../shared/result.ts'
 import { WaterHazardAPI, calendarDate, requiredText, resolvePeriod, rows, supplement, text } from '../api.ts'
 import { dateValue } from '../config.ts'
@@ -71,4 +72,13 @@ export function monitoringValue(value: unknown): number | null {
   if (typeof value === 'string' && !/^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(value.trim())) return null
   const number = Number(value)
   return Number.isFinite(number) ? (Object.is(number, -0) ? 0 : number) : null
+}
+
+/** 一项指标对应一个数据集，防止两项水位或不同单位混为一图。 */
+export function trendDatasets(value: TrendResult): ChartDataset[] {
+  const ids: Record<string, string> = { 涌水量: 'inflow', 排水量: 'drainage', 长观孔水位: 'borehole', 中央水仓水位: 'sump' }
+  return value.series.map(series => ({ id: ids[series.name], title: `${series.source} ${series.sensor}趋势`,
+    columns: [{ name: 'time', title: '时间', type: 'time' }, { name: 'value', title: series.name, type: 'number', unit: series.unit }],
+    rows: series.points.map(point => ({ time: point.time, value: point.value })),
+  }))
 }

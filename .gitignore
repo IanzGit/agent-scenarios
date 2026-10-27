@@ -1,5 +1,7 @@
 node_modules/
 lib/
+packages/*/lib/
+test-results/
 .env
 .dsh/
 *.tgz

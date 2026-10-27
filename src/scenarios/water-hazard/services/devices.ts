@@ -1,4 +1,5 @@
 /** 水文设备分类、去重及在线离线统计。 */
+import type { ChartDataset } from 'dsh-agent-charts'
 import { result, table, type Row, type ToolResult } from '../../../shared/result.ts'
 import { WaterHazardAPI, requiredText, text } from '../api.ts'
 
@@ -49,4 +50,18 @@ export async function deviceStatus(api: WaterHazardAPI, signal: AbortSignal): Pr
   const typeDescription = [...byType].map(([type, total]) => `${type}${total}套`).join('、')
   const summary = `矿井共部署${total}套水文监测设备（按传感器计数）${typeDescription ? `，其中${typeDescription}` : ''}。在线${online}套，离线${total - online}套。`
   return result('监测设备情况', summary, [table('水文监测设备统计表', ['设备区域', '设备类型', '设备数量', '在线设备数量', '离线设备数量'], values)])
+}
+
+/** 排除合计行，跨区域汇总传感器类型。 */
+export function deviceDatasets(value: ToolResult): ChartDataset[] {
+  const counts = new Map<string, number>()
+  for (const row of value.tables[0].rows) {
+    if (row.设备区域 === '合计') continue
+    const type = String(row.设备类型)
+    counts.set(type, (counts.get(type) ?? 0) + Number(row.设备数量))
+  }
+  return [{ id: 'device_types', title: '水文监测设备类型数量占比',
+    columns: [{ name: 'category', title: '设备类型', type: 'category' }, { name: 'value', title: '设备数量', type: 'number', unit: '套' }],
+    rows: [...counts].map(([category, value]) => ({ category, value })),
+  }]
 }
