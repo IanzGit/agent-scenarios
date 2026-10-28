@@ -44,13 +44,13 @@ export function validateQuery(input: unknown, catalog: Catalog): SemanticQuery {
     for (const value of values) parseDate(String(value))
     if (Date.parse(String(values[0])) > Date.parse(String(values[1]))) invalid('日期范围起点不能晚于终点。')
   }
-  const filter = (value: unknown, depth: number): void => {
-    if (!isObject(value)) invalid('过滤条件必须为对象。')
+  const filter = (value: unknown, depth: number, path: string): void => {
+    if (!isObject(value)) invalid(`${path}：过滤条件必须为对象。`)
     if ('and' in value || 'or' in value) {
       const keys = Object.keys(value)
       const children = 'and' in value ? value.and : value.or
-      if (keys.length !== 1 || !Array.isArray(children) || !children.length || depth >= 2) invalid('逻辑组只允许非空 and/or，最多嵌套两层。')
-      for (const child of children) filter(child, depth + 1)
+      if (keys.length !== 1 || !Array.isArray(children) || !children.length || depth >= 2) invalid(`${path}：逻辑组只允许非空 and/or，最多嵌套两层。`)
+      for (const [index, child] of children.entries()) filter(child, depth + 1, `${path}.${'and' in value ? 'and' : 'or'}[${index}]`)
       return
     }
     if (Object.keys(value).some(key => !['member', 'operator', 'values'].includes(key)) || typeof value.member !== 'string' || typeof value.operator !== 'string' || !operators.has(value.operator)) invalid('过滤字段或操作符无效。')
@@ -61,7 +61,7 @@ export function validateQuery(input: unknown, catalog: Catalog): SemanticQuery {
       if (values !== undefined) invalid('set/notSet 不得携带 values。')
       return
     }
-    if (!Array.isArray(values) || !values.length || values.some(item => item === null || !['string', 'number', 'boolean'].includes(typeof item))) invalid('过滤值必须为非空标量数组。')
+    if (!Array.isArray(values) || !values.length || values.some(item => item === null || !['string', 'number', 'boolean'].includes(typeof item))) invalid(`${path}.values：过滤值必须为非空标量数组。`)
     if (field.type === 'boolean') {
       value.values = values.map(item => {
         if ([true, 1, '1', 'true'].includes(item)) return '1'
@@ -79,17 +79,16 @@ export function validateQuery(input: unknown, catalog: Catalog): SemanticQuery {
       if (field.type === 'time') parseDate(String(values[0]))
     } else if (['contains', 'notContains', 'startsWith', 'notStartsWith', 'endsWith', 'notEndsWith'].includes(value.operator) && field.type !== 'string') invalid('文本操作符只能引用字符串维度。')
     if (value.operator === 'equals' && field.type === 'string' && !depth) {
-      const others = query.filters.filter(item => isObject(item) && item !== value && item.member === value.member && item.operator === 'equals')
-      if (others.some(item => isObject(item) && Array.isArray(item.values) && !item.values.some(candidate => values.includes(candidate)))) invalid('同一字段的多个候选对象必须放入同一个 or 组。', 'conflicting_filter')
+      const others = query.filters.filter(item => 'member' in item && item !== value && item.member === value.member && item.operator === 'equals')
+      if (others.some(item => 'values' in item && !item.values.some(candidate => values.includes(candidate)))) invalid('同一字段的多个候选对象必须放入同一个 or 组。', 'conflicting_filter')
     }
   }
-  for (const item of query.filters) filter(item, 0)
+  for (const [index, item] of query.filters.entries()) filter(item, 0, `filters[${index}]`)
   for (const item of query.time_dimensions) {
     const field = member(item.dimension, 'dimension')
     if (field.type !== 'time') invalid('time_dimensions 必须引用时间字段。')
     if (query.query_mode === 'view' && !query.dimensions.includes(item.dimension)) invalid('默认投影以外的时间字段只能用于 filters。')
     if (item.date_range) dateRange(item.date_range)
-    if (item.granularity) invalid('历史明细保留原始采样时间，不允许时间聚合。')
   }
   for (const item of query.order) if (member(item.member).kind === 'segment') invalid('不能按 segment 排序。')
   return query

@@ -162,7 +162,7 @@ DSH_HOME="$PWD/.dsh" node --env-file-if-exists=.env ../deepseek-harness/apps/cli
 
 新会话继续默认使用 `water-hazard`。在 preset 菜单选择“水文监测查数”（`hydrology-monitoring`），可查询监测点、实时状态、历史趋势和预警报警。“水文查询子智能体”（`hydrology-query`）用于单任务委派。场景入口为 `dsh-agent-scenarios/hydrology-monitoring`，子智能体插件入口为 `dsh-agent-scenarios/hydrology-monitoring/query-child`，源码位于 `src/scenarios/hydrology-monitoring/`，技能位于 `skills/hydrology-monitoring/`。
 
-该场景参考原 `hydrology_semantic_query` 的业务口径，保留现有 Cube 语义服务，只迁移完整目录模式；不包含向量检索、原 Python 父智能体、报告子智能体或 LangGraph。宿主使用官方 profile 提供的 `subagent`、`subagent-spawn-in-process`、Session 持久化及 Session 查询服务，不重复注册这些全局服务。
+该场景参考原 `hydrology_semantic_query` 的业务口径，保留现有 Cube 语义服务，只迁移完整目录模式；不包含向量检索、原 Python 父智能体、报告子智能体或 LangGraph。宿主使用官方 profile 提供的 `subagent`、`subagent-spawn-in-process`、Session 持久化及 Session 查询服务，不重复注册这些全局服务。全局 Host 插件 `dsh-agent-scenarios/hydrology-monitoring/results` 提供唯一的 `hydrologyQueryResults` 文件服务，两个 preset 共享该服务，不各自配置不同结果目录。
 
 标准 `@deepseek-ai/dsh-tool-subagent` 注册为 `query_hydrology`，固定 `provider: spawn`、`agentPreset: hydrology-query`、`maxDepth: 1`。每个独立子会话使用自己的上下文和查询进度，默认继承主会话的模型；查询 preset 只允许目录和查询工具，不提供递归委派、skill 或图表工具。普通 Harness 会话依据 skill 拆分任务并展示结果，不新增自定义父智能体执行器。
 
@@ -173,13 +173,19 @@ DSH_HOME="$PWD/.dsh" node --env-file-if-exists=.env ../deepseek-harness/apps/cli
 | `run_semantic_query` | 子智能体工具；`query_goal / semantic_query`，执行本地校验、Cube `/sql` 编译预检及 `/load` 查询 |
 | `get_hydrology_query_result` | 主会话工具；`subagent_id`，从直接子会话已提交的工具记录读取完整表格、确定性统计及当前轮图表来源，不再次查询 Cube |
 
-查询输入字段为 `query_mode / models / measures / dimensions / segments / filters / time_dimensions / order / limit / offset / ungrouped`。只执行明细查询，固定 `measures=[]`、`ungrouped=true`；View 返回完整 `default_projection`，Cube 限定同一连接组件内1至4个模型。语义目录提供模型、成员、规范过滤标识和业务约束；不接受原始 SQL。未要求 TopN、最新或分页时不设置行数上限，不截断匹配结果。
+查询输入字段为 `query_mode / models / measures / dimensions / segments / filters / time_dimensions / order / limit / offset / ungrouped`。只执行明细查询，固定 `measures=[]`、`ungrouped=true`；View 返回完整 `default_projection`，Cube 限定同一连接组件内1至4个模型。过滤叶子严格使用 `member / operator / values`，`set/notSet` 不带 `values`，逻辑组只接受两层非空 `and/or`；不接受字段简写。`time_dimensions` 保留 `dimension / date_range`，不接受聚合粒度 `granularity`。原生校验失败提供具体过滤字段路径和示例；子智能体提示词要求只修错误字段，保留日期、对象、地点、排除条件及 AND/OR 关系。本次未增加结构化任务语义守卫，语法合法的错误业务范围仍需核对。语义目录提供模型、成员、规范过滤标识和业务约束；不接受原始 SQL。未要求 TopN、最新或分页时不设置行数上限，客户端不另行截断 Cube 返回的行集。
 
-一个子智能体只执行一个独立小任务，先加载模型详情，再形成一次成功或无数据的最终查询。参数、目录或 Cube 400 错误可以修正；认证、网络、超时、非法响应和 Continue wait 耗尽终止查询。工具用版本1 JSON 记录状态、实际查询、列、完整行集和结构化错误；结果读取验证父子归属、preset、完成状态、版本和行数，不把模型总结当成数据。原生工具日志随官方 Session 持久化，支持子智能体释放后的读取。
+一个子智能体只执行一个独立小任务，先加载模型详情，再形成一次成功或无数据的最终查询。参数、目录或 Cube 400 错误可以修正；认证、网络、超时、非法响应和 Continue wait 耗尽终止查询。完整版本1 `QueryRecord` 原子写入独立文件，包含实际查询、列、完整行集和错误；工具输出改为版本2回执，只有状态、行数、错误和 `result_ref: { id, bytes, sha256 }`。官方 `output.presentationMeta` 将回执存于 `meta.hydrologyQuery`，目录详情加载状态存于 `meta.hydrologyCatalog`，冷恢复和父会话读取均不解析模型展示文本，兼容 Harness spill 的首尾预览与省略提示。结果读取文本明确展示实际模型、过滤和时间条件，供成文前核对业务范围。
 
-每轮最多委派三个独立任务，依赖任务先读取上游所需数据。只剩等待时结束响应，运行时通知完成；全部取数完成后，在最终展示轮统一读取结果、调用图表并输出报告。提前为依赖读取的结果在展示轮重新读取；旧轮的 `source_id` 不能使用。图表继续使用既有工具、正文引用和版本1展示元数据，刷新回放不重新取数。
+结果文件位于 `<resultsDirectory>/<子会话ID的SHA-256>/<随机结果ID>.json`，封装格式版本、父子会话归属和完整记录。目录/文件以私有权限创建，先写临时文件并同步，再原子提交。引用不是任意路径；读取校验父子归属、preset、完成状态、引用、文件长度、SHA-256、记录版本与行数。文件不可用或损坏明确失败，不当作无数据；保存失败产生终止错误回执，不把尚未保存的数据标记为可读取。工具最终被拒绝或取消时清理本次未提交文件，卸载等待在途操作；已提交文件默认长期保留，不随会话关闭或插件卸载删除，需由管理员按保存需求手动清理。
 
-适配器按稳定语义成员识别类型、测点、数值、单位、时间和状态：`point_types / point_names / value_statuses / device_statuses` 为按测点唯一标识去重的数量分布；`realtime_* / history_*` 分别为按监测类型和单位拆分的实时及历史数据集。饼图使用 `category / count`；实时散点和柱状图使用 `point / value`；折线图使用 `time / value`，可按 `point` 分系列。历史保留重复时间、空值和原精度，统计仅使用有限数值。事件只依据实际起止时间计算已结束时长，结束时间为空标记“未结束”。
+历史会话保持原样，不恢复或迁移旧 spill 文件。没有版本2结构化回执的历史查询会明确提示重新委派；重新查询后使用新结果文件，避免复用上次条件已错误的温度结果。
+
+业务范围采用 Schema 和提示词约束，自由成文没有程序化事实校验；仍需核对测点去重数量及“无事件不等于运行正常”等结论，查询或绘图成功不代表报告全文正确。
+
+每轮最多委派三个独立任务，依赖任务先读取上游所需数据。只剩等待时结束响应，运行时通知完成；通知中的 closing message 可能是纠错前说明或没有正文，不能据此重复委派，查询状态以结果读取工具返回的 `outcome` 为准。全部取数完成后，在最终展示轮统一读取结果、调用图表并输出报告。提前为依赖读取的结果在展示轮重新读取；旧轮的 `source_id` 不能使用。图表继续使用既有工具、正文引用和版本1展示元数据，刷新回放不重新取数。
+
+适配器按稳定语义成员识别类型、测点、数值、单位、时间和状态，包含测点部署 `view_point_deployment_analysis`：`point_types / point_names / value_statuses / device_statuses` 为按测点唯一标识去重的数量分布；`realtime_* / history_*` 分别为按监测类型和单位拆分的实时及历史数据集。饼图使用 `category / count`；实时散点和柱状图使用 `point / value`；折线图使用 `time / value`，可按 `point` 分系列。历史保留重复时间、空值和原精度，统计仅使用有限数值。测点定义分布明细和可绘图的历史采样明细复用现有 `chartOnly` 标记，完整保留在结构化表格和图表来源中，模型文本展示分布/指标统计与图表目录，避免多项原始明细表耗尽上下文。事件明细继续完整展示，只依据实际起止时间计算已结束时长，结束时间为空标记“未结束”。
 
 | 技能 | 查询拆分 | 章节和展示 |
 | --- | --- | --- |
@@ -200,10 +206,11 @@ DSH_HOME="$PWD/.dsh" node --env-file-if-exists=.env ../deepseek-harness/apps/cli
 | `META_CACHE_TTL_SECONDS` | `300` |
 | `TIMEZONE` | `Asia/Shanghai` |
 | `MAX_AGENT_ITERATIONS` | `6`，通过官方 `agent/pre-step` 扩展点限制 |
+| `RESULTS_DIRECTORY` | 官方 Harness home 下的 `storages/hydrology-query-results`，不依赖临时 spill 目录 |
 
-显式查询子智能体插件配置优先于环境变量，字段为对应 camelCase，例如 `cubeUrl`、`cubeToken` 和 `maxAgentIterations`。修改既有安装的 preset 组合后，重新执行本文的官方 `plugin --profile web add .` 安装命令并重启 `pnpm start`，在新会话选择新增场景。现有会话继续使用其原 preset。
+显式查询子智能体插件配置优先于环境变量，字段为对应 camelCase，例如 `cubeUrl`、`cubeToken` 和 `maxAgentIterations`。结果目录只在全局 `hydrology-query-results` Host 条目配置 `resultsDirectory`，该值优先于 `HYDROLOGY_SEMANTIC_QUERY_RESULTS_DIRECTORY`；相对目录在 Host 启动时解析为绝对路径。修改结果目录时需同步迁移已保存的目录结构，否则已有新格式回执将无法读取。修改既有安装的 preset 组合后，重新执行本文的官方 `plugin --profile web add .` 安装命令并重启 `pnpm start`，在新会话选择新增场景。现有会话继续使用其原 preset。
 
-水文监测测试使用本地 Cube fixture 和固定模型响应，验证查询约束、失败分类、原生 spawn、跨会话拒绝、结果持久化及图表来源；浏览器测试同时验证原水害场景和新场景的正文图表、交互与刷新回放。运行 `pnpm test / typecheck / build / test:browser`，不需要业务接口或模型密钥。
+水文监测测试使用本地 Cube fixture 和固定模型响应，验证查询约束、失败分类、原生 spawn、跨会话拒绝、结果持久化及图表来源，覆盖193行、77行和万行结果在真实12500-token spill 策略下的完整读取、新服务实例读取、文件损坏/缺失、写入失败和取消清理；参数纠错回放核对最终 Cube 请求保留日期、AND及排除条件。浏览器测试同时验证原水害场景和新场景的正文图表、交互与刷新回放。运行 `pnpm test / typecheck / build / test:browser`，不需要业务接口或模型密钥。
 
 ### 添加其他领域
 

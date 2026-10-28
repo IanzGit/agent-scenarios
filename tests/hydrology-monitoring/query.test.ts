@@ -7,9 +7,37 @@ import { resolveSettings } from '../../src/scenarios/hydrology-monitoring/config
 import { runQuery, validateQuery } from '../../src/scenarios/hydrology-monitoring/query.ts'
 import { errorRecord, parseRecord } from '../../src/scenarios/hydrology-monitoring/protocol.ts'
 import { presentQuery } from '../../src/scenarios/hydrology-monitoring/presentation.ts'
+import { renderChartResult } from '../../src/shared/chart-result.ts'
+import { validateArgs } from '@deepseek-ai/dsh-tools'
+import { semanticQuerySchema } from '../../src/scenarios/hydrology-monitoring/protocol.ts'
 import { cubeMeta, HISTORY, REALTIME, EVENTS, queryFor, startCubeFixture } from '../fixtures/hydrology.ts'
 
 const signal = () => new AbortController().signal
+
+test('真实失败参数在模型可见 Schema 阶段拒绝字段简写、聚合粒度及字符串化查询', () => {
+  for (const query of [
+    { ...queryFor(), filters: [{ [`${HISTORY}.point_name`]: ['主水平水仓入口明渠（东）流量水流量'] }] },
+    { ...queryFor(), filters: [{ or: [{ [`${HISTORY}.point_name`]: ['主斜井水位'] }] }] },
+    { ...queryFor(), filters: [{ member: `${HISTORY}.point_name`, operator: 'equals' }] },
+    { ...queryFor(), time_dimensions: [{ dimension: `${HISTORY}.observed_at`, date_range: ['2025-09-01', '2025-09-07'], granularity: 'day' }] },
+    JSON.stringify(queryFor()),
+  ]) assert.ok(validateArgs({ semantic_query: { ...semanticQuerySchema, required: true } }, { semantic_query: query }).length > 0)
+})
+
+test('测点部署 View 按唯一测点统计，生成类型分布饼图的数据集', () => {
+  const model = 'view_point_deployment_analysis'
+  const record = { version: 1 as const, outcome: 'success' as const, terminal: true, query_goal: '全矿测点类型分布', row_count: 194,
+    columns: ['point_name_code', 'point_name', 'value_type_name', 'device_name'].map(name => ({ name: `${model}.${name}`, title: name, data_type: 'string' })),
+    rows: Array.from({ length: 194 }, (_, index) => ({ [`${model}.point_name_code`]: `P${index % 193}`, [`${model}.point_name`]: `测点${index % 193}`, [`${model}.value_type_name`]: index % 193 < 100 ? '液位' : '水流量', [`${model}.device_name`]: '设备说明'.repeat(100) })) }
+  const presented = presentQuery(record)
+  assert.deepEqual(presented.datasets.find(dataset => dataset.id === 'point_types')?.rows, [{ category: '液位', count: 100 }, { category: '水流量', count: 93 }])
+  assert.equal(presented.value.tables[0].rows.length, 50)
+  const modelText = renderChartResult({}, presented.value).map(block => block.text).join('')
+  assert.match(modelText, /明细共 194 行，正文仅展示前 50 行，完整数据已保留在查询结果文件中/)
+  assert.match(modelText, /监测类型数量/)
+  assert.match(modelText, /去重数量：193/)
+  assert.match(modelText, /设备说明/)
+})
 
 test('完整目录固定 View 投影，只接受公开成员和受治理明细查询', () => {
   const meta = cubeMeta()
@@ -77,6 +105,43 @@ test('实时分布按测点去重，事件持续情况只按真实起止时间�
     const events = presentQuery(await runQuery(client, queryFor(EVENTS), '预警报警', signal()))
     assert.equal(events.datasets.length, 0)
     assert.deepEqual(events.value.tables[0].rows.map(row => row['持续时间（小时）']), [2, '未结束'])
+  } finally { await fixture.close() }
+})
+
+test('历史明细按查询返回的降序截取，图表仍完整按时间排序', async () => {
+  const fixture = await startCubeFixture({ rowCount: 51 })
+  try {
+    const client = new CubeClient(resolveSettings({ cubeUrl: fixture.url }))
+    const record = await runQuery(client, { ...queryFor(), order: [{ member: `${HISTORY}.observed_at`, direction: 'desc' }] }, '最近历史', signal())
+    // 本地 Cube fixture 不执行排序，在展示边界模拟查询返回的降序行集。
+    record.rows.reverse()
+    const original = structuredClone(record.rows)
+    const presented = presentQuery(record)
+    const times = presented.value.tables[0].rows.map(row => row['监测时间'])
+    assert.deepEqual(times, original.slice(0, 50).map(row => row[`${HISTORY}.observed_at`]))
+    assert.equal(times[0], '2025-09-01T00:25:00.000Z')
+    assert.equal(times.at(-1), '2025-09-01T00:00:30.000Z')
+    assert.deepEqual(record.rows, original)
+    assert.equal(presented.datasets[0].rows.length, 51)
+    assert.equal(presented.datasets[0].rows[0].time, '2025-09-01T00:00:00.000Z')
+  } finally { await fixture.close() }
+})
+
+for (const rowCount of [50, 51]) test(`异常事件${rowCount}行统一截断并保留持续时间`, async () => {
+  const fixture = await startCubeFixture({ rowCount })
+  try {
+    const client = new CubeClient(resolveSettings({ cubeUrl: fixture.url }))
+    const record = await runQuery(client, queryFor(EVENTS), '异常事件', signal())
+    const presented = presentQuery(record)
+    assert.equal(presented.value.tables[0].rows.length, 50)
+    assert.equal(presented.value.tables[0].rows[0]['持续时间（小时）'], 2)
+    assert.equal(presented.value.tables[0].rows.at(-1)?.['持续时间（小时）'], '未结束')
+    assert.equal(record.rows.length, rowCount)
+    assert.equal(presented.datasets.length, 0)
+    const modelText = renderChartResult({}, presented.value).map(block => block.text).join('')
+    assert.equal(modelText.split('\n').filter(line => line.startsWith('|')).length, 52)
+    if (rowCount > 50) assert.match(modelText, /明细共 51 行，正文仅展示前 50 行，完整数据已保留在查询结果文件中/)
+    else assert.doesNotMatch(modelText, /正文仅展示前/)
   } finally { await fixture.close() }
 })
 

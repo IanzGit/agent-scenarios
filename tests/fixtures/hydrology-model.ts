@@ -9,7 +9,11 @@ export function hydrologyStep(messages: { role: string; text: string; name?: str
     const model = prompt.includes('实时') ? REALTIME : HISTORY
     if (!observations.length) return { tool: 'search_semantic_catalog', args: {} }
     if (observations.length === 1) return { tool: 'search_semantic_catalog', args: { model_names: [model] } }
+    if (prompt.includes('纠错回归') && observations.length === 2) return { tool: 'run_semantic_query', args: { query_goal: prompt, semantic_query: {
+      ...queryFor(model), filters: [{ [`${model}.point_name`]: ['主斜井水位'] }], time_dimensions: [{ dimension: `${model}.observed_at`, date_range: ['2025-09-01', '2025-09-07'] }],
+    } } }
     return { tool: 'run_semantic_query', args: { query_goal: prompt, semantic_query: { ...queryFor(model),
+      ...(prompt.includes('纠错回归') ? { filters: [{ member: `${model}.point_name`, operator: 'equals', values: ['主斜井水位'] }, { member: `${model}.value_type_id`, operator: 'equals', values: ['12001'] }, { member: `${model}.point_name`, operator: 'notEquals', values: ['排除测点'] }] } : {}),
       ...(model === HISTORY ? { time_dimensions: [{ dimension: `${model}.observed_at`, date_range: ['2025-09-01', '2025-09-07'] }], order: [{ member: `${model}.observed_at`, direction: 'asc' }] } : {}) } } }
   }
   const prompt = messages.find(message => message.role === 'user')?.text ?? ''
@@ -26,12 +30,12 @@ export function hydrologyStep(messages: { role: string; text: string; name?: str
     const marker = '可绘图数据集（使用来源ID调用图表工具）：\n'
     const position = text.indexOf(marker)
     if (position < 0) return []
-    const source = JSON.parse(text.slice(position + marker.length)) as { source_id: string; datasets: { id: string; title: string }[] }
+    const source = JSON.parse(text.slice(position + marker.length).split('\n\n(Omitted ')[0]) as { source_id: string; datasets: { id: string; title: string }[] }
     return source.datasets.filter(dataset => dataset.id.startsWith('history_') && dataset.title.includes('（m）')).map(dataset => ({ source_id: source.source_id, dataset_id: dataset.id }))
   })
   const chart = observations.map(text => /图表ID：([a-f0-9]{24})；状态：rendered/.exec(text)).find(Boolean)?.[1]
   if (available.length && !chart) return { tool: 'render_line_chart', args: { ...available[0], title: '主斜井水位历史趋势', x_field: 'time', value_field: 'value', series_field: 'point' } }
-  return { text: `# 主斜井水位监测分析\n\n## 历史变化\n\n${available.length ? `有效记录2条，最小值0m，最大值1.23m，均值0.62m。\n\n[图表:${chart}]` : '没有可展示的历史趋势；以查询状态说明为准。'}${partial ? '\n\n## 当前状态\n\n实时查询认证失败，保留已成功的历史分析，不据此判断运行正常。' : ''}` }
+  return { text: `# 主斜井水位监测分析\n\n## 历史变化\n\n${available.length ? `历史采样与统计已取得，曲线按实际单位展示。\n\n[图表:${chart}]` : '没有可展示的历史趋势；以查询状态说明为准。'}${partial ? '\n\n## 当前状态\n\n实时查询认证失败，保留已成功的历史分析，不据此判断运行正常。' : ''}` }
 }
 
 export class HydrologyAdapter extends LlmAdapter {

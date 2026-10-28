@@ -8,11 +8,12 @@ import * as filesystemSkills from '@deepseek-ai/dsh-skill-filesystem'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type {} from 'dsh-agent-charts'
 import { chartResultSchema, renderChartResult, withChartSource } from '../../shared/chart-result.ts'
-import { parseRecord, type QueryRecord } from './protocol.ts'
+import { receiptFromMeta, type QueryReceipt, type QueryRecord } from './protocol.ts'
+import type {} from './results.ts'
 import { presentQuery } from './presentation.ts'
 
 export const name = 'hydrology-monitoring'
-export const inject = ['tools', 'skills', 'systemPrompt', 'chartSources', 'sessionQuery', 'subagents']
+export const inject = ['tools', 'skills', 'systemPrompt', 'chartSources', 'sessionQuery', 'subagents', 'hydrologyQueryResults']
 
 export function apply(ctx: Context): void {
   ctx.tools.presentAs('native')
@@ -38,17 +39,19 @@ export function apply(ctx: Context): void {
       if (!lastEnd || !lastStart || lastEnd.seq < lastStart.seq) throw new Error('查询子智能体仍在运行，请等待完成通知，不要轮询。')
       if (lastEnd.type !== 'turn/end' || lastEnd.data.reason.kind !== 'completed') throw new Error('查询子智能体未正常完成，可能达到迭代上限、被取消或执行失败；不能使用其部分结果。')
       const calls = new Set(events.filter(event => event.type === 'tool/call' && ['run_semantic_query', 'search_semantic_catalog'].includes(event.data.name)).map(event => event.type === 'tool/call' ? event.data.callId : ''))
-      let record: QueryRecord | undefined
+      let receipt: QueryReceipt | undefined
       for (const event of events) {
         if (event.type !== 'tool/result' || event.data.message.isError || !calls.has(event.data.message.toolCallId)) continue
-        const texts = event.data.message.content.filter(block => block.type === 'text')
-        if (texts.length !== 1) continue
-        const value: unknown = JSON.parse(texts[0].text)
-        if (!value || typeof value !== 'object' || !('version' in value) || !('terminal' in value) || value.terminal !== true) continue
-        if (record) throw new Error('一个查询子智能体包含多个最终结果，拒绝混用。')
-        record = parseRecord(value)
+        const value = receiptFromMeta(event.data.meta)
+        if (!value?.terminal) continue
+        if (receipt) throw new Error('一个查询子智能体包含多个最终结果，拒绝混用。')
+        receipt = value
       }
-      if (!record) throw new Error('子智能体没有提交可用的最终查询记录。')
+      if (!receipt) throw new Error('子智能体没有提交新格式的结果引用，旧版本结果需要重新委派查询。')
+      const record: QueryRecord = receipt.result_ref
+        ? await ctx.hydrologyQueryResults.read(id, exec.agent.id, receipt.result_ref, exec.signal)
+        : { version: 1, outcome: 'error', terminal: true, query_goal: receipt.query_goal, row_count: 0, columns: [], rows: [], error: receipt.error }
+      if (record.outcome !== receipt.outcome || record.row_count !== receipt.row_count || record.query_goal !== receipt.query_goal) throw new Error('完整查询结果与回执不一致，请重新查询。')
       const presented = presentQuery(record)
       const value = record.outcome === 'success' && presented.datasets.length
         ? withChartSource(presented.value, exec, ctx.chartSources, presented.datasets) : presented.value

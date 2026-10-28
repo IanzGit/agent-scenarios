@@ -1,6 +1,24 @@
 /** 查询输入、可持久化结果及业务错误；不依赖原 Python 运行时。 */
 import { validateArgs, type InferValue } from '@deepseek-ai/dsh-tools'
 
+const filterWithValues = { type: 'object', additionalProperties: false, properties: {
+  member: { type: 'string', required: true, description: '公开维度的 model.member 全名。' },
+  operator: { type: 'string', required: true, enum: ['equals', 'notEquals', 'contains', 'notContains', 'startsWith', 'notStartsWith', 'endsWith', 'notEndsWith', 'gt', 'gte', 'lt', 'lte', 'inDateRange', 'notInDateRange', 'beforeDate', 'beforeOrOnDate', 'afterDate', 'afterOrOnDate'] },
+  values: { type: 'array', required: true, items: { oneOf: [{ type: 'string' }, { type: 'number' }, { type: 'boolean' }] } },
+} } as const
+const presenceFilter = { type: 'object', additionalProperties: false, properties: {
+  member: { type: 'string', required: true }, operator: { type: 'string', enum: ['set', 'notSet'], required: true },
+} } as const
+const leafFilter = { oneOf: [filterWithValues, presenceFilter] } as const
+const nestedFilter = { oneOf: [filterWithValues, presenceFilter,
+  { type: 'object', additionalProperties: false, properties: { and: { type: 'array', required: true, items: leafFilter } } },
+  { type: 'object', additionalProperties: false, properties: { or: { type: 'array', required: true, items: leafFilter } } },
+] } as const
+const filterSchema = { oneOf: [filterWithValues, presenceFilter,
+  { type: 'object', additionalProperties: false, properties: { and: { type: 'array', required: true, items: nestedFilter } } },
+  { type: 'object', additionalProperties: false, properties: { or: { type: 'array', required: true, items: nestedFilter } } },
+] } as const
+
 export const semanticQuerySchema = {
   type: 'object', additionalProperties: false, properties: {
     query_mode: { type: 'string', enum: ['view', 'cube'], required: true },
@@ -8,10 +26,10 @@ export const semanticQuerySchema = {
     measures: { type: 'array', items: { type: 'string' }, required: true },
     dimensions: { type: 'array', items: { type: 'string' }, required: true },
     segments: { type: 'array', items: { type: 'string' }, required: true },
-    filters: { type: 'array', items: { type: 'json' }, required: true, description: 'dimension 过滤条件或 and/or 组，最多两层逻辑组。' },
+    filters: { type: 'array', items: filterSchema, required: true, description: '顶层按 AND 组合。每个叶子使用 {"member":"model.member","operator":"equals","values":["值"]}，不得使用 {"model.member":["值"]} 简写；and/or 最多两层。' },
     time_dimensions: { type: 'array', required: true, items: { type: 'object', additionalProperties: false, properties: {
       dimension: { type: 'string', required: true },
-      date_range: { type: 'array', items: { type: 'string' } }, granularity: { type: 'string' },
+      date_range: { type: 'array', items: { type: 'string' }, description: '含首尾自然日的日期范围；明细查询不提供 granularity。' },
     } } },
     order: { type: 'array', required: true, items: { type: 'object', additionalProperties: false, properties: {
       member: { type: 'string', required: true }, direction: { type: 'string', enum: ['asc', 'desc'], required: true },
@@ -21,6 +39,26 @@ export const semanticQuerySchema = {
   },
 } as const
 export type SemanticQuery = InferValue<typeof semanticQuerySchema>
+
+/** 为 oneOf 的过滤分支补充具体路径；不修写或放宽模型输入。 */
+export function filterInputIssues(query: unknown): string[] {
+  if (!query || typeof query !== 'object' || !('filters' in query) || !Array.isArray(query.filters)) return []
+  const issues: string[] = []
+  const visit = (value: unknown, path: string, depth: number): void => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) { issues.push(`${path} 必须为过滤对象。`); return }
+    if ('and' in value || 'or' in value) {
+      const key = 'and' in value ? 'and' : 'or'
+      const children = 'and' in value ? value.and : value.or
+      if (depth >= 2 || Object.keys(value).length !== 1 || !Array.isArray(children) || !children.length) { issues.push(`${path}.${key} 必须为非空数组，逻辑组最多两层且不能混入其他字段。`); return }
+      children.forEach((child, index) => visit(child, `${path}.${key}[${index}]`, depth + 1))
+      return
+    }
+    const schema = 'operator' in value && ['set', 'notSet'].includes(String(value.operator)) ? presenceFilter : filterWithValues
+    issues.push(...validateArgs({ filter: { ...schema, required: true } }, { filter: value }).map(issue => issue.replaceAll('"filter', `"${path}`)))
+  }
+  query.filters.forEach((value, index) => visit(value, `semantic_query.filters[${index}]`, 0))
+  return issues
+}
 
 export const recordSchema = {
   type: 'object', additionalProperties: false, properties: {
@@ -40,6 +78,39 @@ export const recordSchema = {
   },
 } as const
 export type QueryRecord = InferValue<typeof recordSchema>
+
+export const resultRefSchema = { type: 'object', additionalProperties: false, properties: {
+  id: { type: 'string', required: true }, bytes: { type: 'integer', required: true }, sha256: { type: 'string', required: true },
+} } as const
+export type ResultRef = InferValue<typeof resultRefSchema>
+
+/** 版本2回执只携带状态和引用；完整版本1记录保存在独立文件。 */
+export const receiptSchema = { type: 'object', additionalProperties: false, properties: {
+  version: { type: 'integer', const: 2, required: true },
+  outcome: recordSchema.properties.outcome, terminal: recordSchema.properties.terminal,
+  query_goal: recordSchema.properties.query_goal, row_count: recordSchema.properties.row_count,
+  error: recordSchema.properties.error, result_ref: resultRefSchema,
+} } as const
+export type QueryReceipt = InferValue<typeof receiptSchema>
+
+export function receiptFor(record: QueryRecord, result_ref?: ResultRef): QueryReceipt {
+  return { version: 2, outcome: record.outcome, terminal: record.terminal, query_goal: record.query_goal, row_count: record.row_count,
+    ...(record.error ? { error: record.error } : {}), ...(result_ref ? { result_ref } : {}) }
+}
+
+/** 只读取工具拥有的持久化 metadata，不解析模型展示文本。 */
+export function receiptFromMeta(meta: unknown): QueryReceipt | undefined {
+  if (!meta || typeof meta !== 'object' || !('hydrologyQuery' in meta)) return undefined
+  const value = meta.hydrologyQuery
+  const issues = validateArgs({ receipt: { ...receiptSchema, required: true } }, { receipt: value })
+  if (issues.length) throw new Error(`查询回执无效，请重新查询：${issues.join('；')}`)
+  const receipt = value as QueryReceipt
+  const ref = receipt.result_ref
+  if (receipt.row_count < 0 || (receipt.outcome === 'error' && !receipt.error)
+    || (receipt.terminal && receipt.outcome !== 'error' && !ref)
+    || (ref && (!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(ref.id) || !/^[a-f0-9]{64}$/.test(ref.sha256) || ref.bytes < 1))) throw new Error('查询回执状态或文件引用无效，请重新查询。')
+  return receipt
+}
 
 export class QueryError extends Error {
   constructor(message: string, readonly code: string, readonly stage: string, readonly retryable = false) { super(message) }

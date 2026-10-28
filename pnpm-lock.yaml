@@ -33,6 +33,9 @@ importers:
       '@deepseek-ai/dsh-fs-local':
         specifier: link:../deepseek-harness/packages/fs/fs-local
         version: link:../deepseek-harness/packages/fs/fs-local
+      '@deepseek-ai/dsh-home-paths':
+        specifier: link:../deepseek-harness/packages/util/home-paths
+        version: link:../deepseek-harness/packages/util/home-paths
       '@deepseek-ai/dsh-llm':
         specifier: link:../deepseek-harness/packages/llm/llm
         version: link:../deepseek-harness/packages/llm/llm
@@ -60,6 +63,12 @@ importers:
       '@deepseek-ai/dsh-skill-filesystem':
         specifier: link:../deepseek-harness/packages/skill/skill-filesystem
         version: link:../deepseek-harness/packages/skill/skill-filesystem
+      '@deepseek-ai/dsh-spill-local':
+        specifier: link:../deepseek-harness/packages/spill/spill-local
+        version: link:../deepseek-harness/packages/spill/spill-local
+      '@deepseek-ai/dsh-spill-policy':
+        specifier: link:../deepseek-harness/packages/spill/spill-policy
+        version: link:../deepseek-harness/packages/spill/spill-policy
       '@deepseek-ai/dsh-subagent':
         specifier: link:../deepseek-harness/packages/subagent/subagent
         version: link:../deepseek-harness/packages/subagent/subagent

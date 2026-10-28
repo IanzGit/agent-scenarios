@@ -26,7 +26,7 @@ export function queryFor(model = HISTORY): SemanticQuery {
     time_dimensions: [], order: [], limit: null, offset: 0, ungrouped: true }
 }
 
-export type CubeFixtureOptions = { status?: number; continueWait?: number; invalid?: boolean; empty?: boolean; delay?: number; failModel?: string }
+export type CubeFixtureOptions = { status?: number; continueWait?: number; invalid?: boolean; empty?: boolean; delay?: number; failModel?: string; rowCount?: number }
 export async function startCubeFixture(options: CubeFixtureOptions = {}) {
   const requests: { path: string; query?: Record<string, unknown>; authorization?: string }[] = []
   let waits = 0
@@ -46,9 +46,11 @@ export async function startCubeFixture(options: CubeFixtureOptions = {}) {
     if (path === 'sql') { response.end(JSON.stringify({ sql: { sql: ['SELECT governed_members', []] } })); return }
     const names = body?.query.dimensions as string[]
     const model = names[0].split('.')[0]
-    const values = model === HISTORY ? [1.234567, 0, null, 4] : [1.234567, 2]
+    const values = options.rowCount === undefined ? model === HISTORY ? [1.234567, 0, null, 4] : [1.234567, 2]
+      : Array.from({ length: options.rowCount }, (_, index) => index % 7 === 0 ? null : index / 100)
     const data = options.empty ? [] : values.map((value, index) => {
       const row: Record<string, string | number | null> = { point_name: '主斜井水位', value, current_value: value, point_unit: index === 3 ? 'cm' : 'm', observed_at: `2025-09-01T0${index < 2 ? 0 : index}:00:00+08:00`, value_type_name: '液位', value_status_name: index === 1 ? '报警' : '正常', device_status_name: '正常', address_name: '130608工作面', subsystem_name: '水文监测', mine_name: '麦垛山煤矿', point_name_code: `主斜井水位（${model === HISTORY ? 'P1' : `P${index + 1}`}）`, started_at: '2025-09-15T01:00:00+08:00', ended_at: index ? null : '2025-09-15T03:00:00+08:00' }
+      if (options.rowCount !== undefined) { row.point_unit = 'm'; row.observed_at = new Date(Date.UTC(2025, 8, 1, 0, 0, index * 30)).toISOString() }
       return Object.fromEntries(names.map(name => [name, row[name.split('.')[1]] ?? null]))
     })
     response.end(JSON.stringify({ data }))
