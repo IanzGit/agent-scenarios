@@ -22,6 +22,51 @@
                 不编造数字，不输出图表配置，不调用未提供的业务能力。日期按工具配置解释。
           - id: tool-skill
             name: '@deepseek-ai/dsh-tool-skill'
+    - id: preset-hydrology-monitoring
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: hydrology-monitoring
+        name: 水文监测查数
+        description: 水文监测点、实时状态、历史趋势及预警报警查询分析。
+        order: 1
+        plugins:
+          - id: hydrology-monitoring
+            name: dsh-agent-scenarios/hydrology-monitoring
+          - id: query-hydrology
+            name: '@deepseek-ai/dsh-tool-subagent'
+            config:
+              provider: spawn
+              toolName: query_hydrology
+              agentPreset: hydrology-query
+              maxDepth: 1
+          - id: chart-tools
+            name: dsh-agent-charts/tools
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                你是水文监测查数助手，使用中文。先加载最匹配的一个 skill，按技能一次性列出查询小任务。
+                每项小任务必须独立调用 query_hydrology，prompt 写全对象、指标、时间、地点和排除条件；
+                不依赖子智能体读取父会话或 skill。每次最多启动三个独立查询，依赖任务取得上游结果后再启动。
+                官方委派立即返回子会话ID，之后由运行时通知完成；只剩等待时结束本次响应，不轮询或宣称报告已完成。
+                全部查询完成后，在最终展示轮统一调用 get_hydrology_query_result 读取所需结果，再绘图并成文，
+                避免跨轮使用已过期的图表来源。先前为依赖读取的结果在展示轮重新读取。
+                无匹配技能的简单查数也必须调用查询子智能体。报告仅依据真实查询结果和确定性统计，
+                明确区分无记录、失败和缺少字段；无事件不能等同于运行正常。
+                使用现有图表工具和本轮来源目录，每张成功图表在对应正文段落后独立一行输出 [图表:真实chart_id]，
+                每个ID引用一次，不编造数据或图表ID，不输出图表配置。技能固定日期不会被真实系统日期覆盖。
+    - id: preset-hydrology-query
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: hydrology-query
+        name: 水文查询子智能体
+        description: 仅供水文监测查数场景委派单个完整查询任务。
+        order: 2
+        plugins:
+          - id: hydrology-query-child
+            name: dsh-agent-scenarios/hydrology-monitoring/query-child
 - id: agent-preset-registry
   config:
     default: water-hazard

@@ -13,28 +13,35 @@ import { chromium, expect } from '@playwright/test'
 import { parse, stringify } from 'yaml'
 import { recordings, recordedArgs, recordedText } from '../fixtures/recorded-model.ts'
 import { startFixtureServer } from '../fixtures/server.ts'
+import { startCubeFixture } from '../fixtures/hydrology.ts'
+import { hydrologyStep } from '../fixtures/hydrology-model.ts'
 
 test('Harness Web 在最终正文段落内展示图表，执行区折叠后仍可交互和刷新回放', { timeout: 180000 }, async () => {
   const root = fileURLToPath(new URL('../../', import.meta.url))
   const cli = resolve(root, '../deepseek-harness/apps/cli/lib/bin.js')
   const temp = await mkdtemp(join(tmpdir(), 'scenario-charts-web-'))
   const fixture = await startFixtureServer()
+  const cube = await startCubeFixture()
   const modelErrors: string[] = []
   let modelCalls = 0
   const gateway = createServer(async (request, response) => {
     try {
       const chunks: Buffer[] = []
       for await (const chunk of request) chunks.push(Buffer.from(chunk))
-      const body = JSON.parse(Buffer.concat(chunks).toString()) as { messages: { role: string; content: string | { type: string; text?: string }[]; tool_calls?: unknown[] }[] }
+      const body = JSON.parse(Buffer.concat(chunks).toString()) as { messages: { role: string; content: string | { type: string; text?: string }[]; tool_calls?: unknown[] }[]; tools?: { function: { name: string } }[] }
       const text = (message: typeof body.messages[number]) => typeof message.content === 'string' ? message.content : message.content?.map(block => block.text ?? '').join('') ?? ''
+      const toolNames = body.tools?.map(tool => tool.function.name) ?? []
+      const hydrology = toolNames.includes('query_hydrology') || toolNames.includes('run_semantic_query')
       const userIndex = body.messages.findLastIndex(message => message.role === 'user' && (text(message).includes('当前矿井总体') || text(message).includes('近30天关键')))
-      const scenario = text(body.messages[userIndex]).includes('趋势') ? 'trend' : 'overview'
-      const round = body.messages.slice(userIndex + 1)
+      const titleRequest = !toolNames.length && body.messages.some(message => message.role === 'system' && text(message).startsWith('Create a concise title for an AI coding-assistant session'))
+      if (!hydrology && userIndex < 0 && !titleRequest) throw new Error(`未识别的模型请求：${body.messages.map(message => text(message).slice(0, 300)).join('\n')}`)
+      const scenario = hydrology || titleRequest ? 'hydrology' : text(body.messages[userIndex]).includes('趋势') ? 'trend' : 'overview'
+      const round = hydrology ? body.messages : body.messages.slice(userIndex + 1)
       const position = round.reduce((total, message) => total + (message.tool_calls?.length ?? 0), 0)
-      const step = recordings[scenario][position]
+      const step = titleRequest ? { text: '主斜井水位监测分析' } : hydrology ? hydrologyStep(body.messages.map(message => ({ role: message.role, text: text(message) })), toolNames) : recordings[scenario][position]
       if (!step) throw new Error(`固定响应耗尽：${scenario}/${position}`)
       const delta = 'tool' in step
-        ? { tool_calls: [{ index: 0, id: `${scenario}-${position}`, type: 'function', function: { name: step.tool, arguments: JSON.stringify(recordedArgs(step.args, round.filter(message => message.role === 'tool').map(text))) } }] }
+        ? { tool_calls: [{ index: 0, id: `${scenario}-${position}`, type: 'function', function: { name: step.tool, arguments: JSON.stringify(hydrology ? step.args : recordedArgs(step.args as Record<string, string>, round.filter(message => message.role === 'tool').map(text))) } }] }
         : { content: recordedText(step.text, round.filter(message => message.role === 'tool').map(text)) }
       modelCalls++
       response.writeHead(200, { 'Content-Type': 'text/event-stream' })
@@ -71,11 +78,14 @@ test('Harness Web 在最终正文段落内展示图表，执行区折叠后仍�
     const scenarioPatch = parse(await readFile(join(root, 'cordis.patch.yml'), 'utf8'))
     const preset = scenarioPatch[0].insert.find((entry: any) => entry.id === 'preset-water-hazard')
     preset.config.plugins[0].config = { apiBaseUrl: fixture.url }
+    const queryPreset = scenarioPatch[0].insert.find((entry: any) => entry.id === 'preset-hydrology-query')
+    queryPreset.config.plugins[0].config = { cubeUrl: cube.url }
     const patchPath = join(temp, 'browser.patch.yml')
     await writeFile(patchPath, stringify([
       { id: 'directory-picker', disabled: true },
       { insert: [{ id: 'directory-picker-browse', name: '@deepseek-ai/dsh-host-directory-picker-browse' }, { id: 'ui-directory-picker-browse', name: '@deepseek-ai/dsh-client-ui-directory-picker-browse' }] },
-      { id: 'preset-water-hazard', config: preset.config }, ...overlay,
+      { id: 'preset-water-hazard', config: preset.config },
+      { id: 'preset-hydrology-query', config: queryPreset.config }, ...overlay,
     ]))
     host = spawn(process.execPath, [cli, 'web', '--patch', patchPath, '--no-open'], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] })
     const url = await new Promise<string>((resolveURL, reject) => {
@@ -95,6 +105,7 @@ test('Harness Web 在最终正文段落内展示图表，执行区折叠后仍�
     const transportErrors: string[] = []
     page.on('pageerror', error => { pageErrors.push(error.message) })
     page.on('requestfailed', request => { transportErrors.push(`${new URL(request.url()).pathname}: ${request.failure()?.errorText}`) })
+    page.on('response', response => { if (response.status() >= 400) transportErrors.push(`${response.status()} ${new URL(response.url()).pathname}`) })
     page.on('console', message => { if (message.type() === 'error') transportErrors.push(message.text()) })
     page.setDefaultTimeout(10000)
     try {
@@ -160,6 +171,28 @@ test('Harness Web 在最终正文段落内展示图表，执行区折叠后仍�
       assert.deepEqual(pageErrors, [])
       await mkdir(join(root, 'test-results'), { recursive: true })
       await page.screenshot({ path: join(root, 'test-results/charts.png'), fullPage: true })
+      // 新场景从官方 preset 菜单选择，复用同一套正文图表插件。
+      await page.getByRole('button', { name: 'New session', exact: true }).last().click()
+      await page.getByRole('button', { name: 'water-hazard', exact: true }).click()
+      await page.getByRole('menuitem', { name: /^水文监测查数/ }).click()
+      await expect(page.getByRole('button', { name: '水文监测查数', exact: true })).toBeVisible()
+      await input.fill('分析主斜井水位历史情况')
+      await input.press('Enter')
+      await expect(cards).toHaveCount(1, { timeout: 30000 })
+      await expect(calls).toHaveCount(1)
+      await expect(page.locator('[data-answer-chart-body]').last()).toContainText('主斜井水位监测分析')
+      await expect(page.locator('[data-answer-chart-body]').last()).not.toContainText('[图表:')
+      const hydrologyIds = await cards.evaluateAll(elements => elements.map(element => element.getAttribute('data-chart-id')))
+      const hydrologyModelCalls = modelCalls
+      const hydrologyQueries = cube.requests.length
+      await page.reload()
+      await expect(cards).toHaveCount(1, { timeout: 30000 })
+      assert.deepEqual(await cards.evaluateAll(elements => elements.map(element => element.getAttribute('data-chart-id'))), hydrologyIds)
+      assert.equal(modelCalls, hydrologyModelCalls)
+      assert.equal(cube.requests.length, hydrologyQueries)
+      assert.deepEqual(modelErrors, [])
+      assert.deepEqual(pageErrors, [])
+      await page.screenshot({ path: join(root, 'test-results/hydrology.png'), fullPage: true })
     } catch (error) {
       await mkdir(join(root, 'test-results'), { recursive: true })
       await page.screenshot({ path: join(root, 'test-results/charts-failure.png'), fullPage: true })
@@ -171,6 +204,7 @@ test('Harness Web 在最终正文段落内展示图表，执行区折叠后仍�
     gateway.closeAllConnections()
     await new Promise<void>(resolve => { gateway.close(() => resolve()) })
     await fixture.close()
+    await cube.close()
     await rm(temp, { recursive: true, force: true })
   }
 })

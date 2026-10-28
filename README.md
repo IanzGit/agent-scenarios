@@ -1,6 +1,6 @@
 # 煤矿场景工具与技能插件
 
-`dsh-agent-scenarios` 是一个标准的 DeepSeek Harness 插件包。每个业务领域使用独立的源码目录、技能目录和 preset；目前提供水害领域的五个查询工具、两个技能，以及五种通用图表工具。业务代码全部为 TypeScript，直接查询现有水文接口；通用图表由独立的标准 Host＋Client 插件 `dsh-agent-charts` 提供，不依赖原 Python 服务。
+`dsh-agent-scenarios` 是一个标准的 DeepSeek Harness 插件包。每个业务领域使用独立的源码目录、技能目录和 preset；提供水害领域的五个查询工具、两个技能，以及水文监测查数领域的 TS 查询子智能体和六个技能。业务代码全部为 TypeScript；通用图表由独立的标准 Host＋Client 插件 `dsh-agent-charts` 提供，不依赖原 Python 服务。
 
 ## 目录与职责
 
@@ -157,6 +157,55 @@ DSH_HOME="$PWD/.dsh" node --env-file-if-exists=.env ../deepseek-harness/apps/cli
 示例问题：“当前矿井总体水害监测预警情况汇总分析”“近30天关键水文指标的变化趋势”“分析2026-08-01至2026-08-30的水文趋势”。
 
 ## 新增领域
+
+### 水文监测查数
+
+新会话继续默认使用 `water-hazard`。在 preset 菜单选择“水文监测查数”（`hydrology-monitoring`），可查询监测点、实时状态、历史趋势和预警报警。“水文查询子智能体”（`hydrology-query`）用于单任务委派。场景入口为 `dsh-agent-scenarios/hydrology-monitoring`，子智能体插件入口为 `dsh-agent-scenarios/hydrology-monitoring/query-child`，源码位于 `src/scenarios/hydrology-monitoring/`，技能位于 `skills/hydrology-monitoring/`。
+
+该场景参考原 `hydrology_semantic_query` 的业务口径，保留现有 Cube 语义服务，只迁移完整目录模式；不包含向量检索、原 Python 父智能体、报告子智能体或 LangGraph。宿主使用官方 profile 提供的 `subagent`、`subagent-spawn-in-process`、Session 持久化及 Session 查询服务，不重复注册这些全局服务。
+
+标准 `@deepseek-ai/dsh-tool-subagent` 注册为 `query_hydrology`，固定 `provider: spawn`、`agentPreset: hydrology-query`、`maxDepth: 1`。每个独立子会话使用自己的上下文和查询进度，默认继承主会话的模型；查询 preset 只允许目录和查询工具，不提供递归委派、skill 或图表工具。普通 Harness 会话依据 skill 拆分任务并展示结果，不新增自定义父智能体执行器。
+
+| 工具 | 参数与行为 |
+| --- | --- |
+| `query_hydrology` | 官方异步委派；`description / prompt`，立即返回 `subagentId`，完成后另行通知 |
+| `search_semantic_catalog` | 子智能体工具；省略 `model_names` 读取公开模型摘要，指定名称读取完整成员和语义约束 |
+| `run_semantic_query` | 子智能体工具；`query_goal / semantic_query`，执行本地校验、Cube `/sql` 编译预检及 `/load` 查询 |
+| `get_hydrology_query_result` | 主会话工具；`subagent_id`，从直接子会话已提交的工具记录读取完整表格、确定性统计及当前轮图表来源，不再次查询 Cube |
+
+查询输入字段为 `query_mode / models / measures / dimensions / segments / filters / time_dimensions / order / limit / offset / ungrouped`。只执行明细查询，固定 `measures=[]`、`ungrouped=true`；View 返回完整 `default_projection`，Cube 限定同一连接组件内1至4个模型。语义目录提供模型、成员、规范过滤标识和业务约束；不接受原始 SQL。未要求 TopN、最新或分页时不设置行数上限，不截断匹配结果。
+
+一个子智能体只执行一个独立小任务，先加载模型详情，再形成一次成功或无数据的最终查询。参数、目录或 Cube 400 错误可以修正；认证、网络、超时、非法响应和 Continue wait 耗尽终止查询。工具用版本1 JSON 记录状态、实际查询、列、完整行集和结构化错误；结果读取验证父子归属、preset、完成状态、版本和行数，不把模型总结当成数据。原生工具日志随官方 Session 持久化，支持子智能体释放后的读取。
+
+每轮最多委派三个独立任务，依赖任务先读取上游所需数据。只剩等待时结束响应，运行时通知完成；全部取数完成后，在最终展示轮统一读取结果、调用图表并输出报告。提前为依赖读取的结果在展示轮重新读取；旧轮的 `source_id` 不能使用。图表继续使用既有工具、正文引用和版本1展示元数据，刷新回放不重新取数。
+
+适配器按稳定语义成员识别类型、测点、数值、单位、时间和状态：`point_types / point_names / value_statuses / device_statuses` 为按测点唯一标识去重的数量分布；`realtime_* / history_*` 分别为按监测类型和单位拆分的实时及历史数据集。饼图使用 `category / count`；实时散点和柱状图使用 `point / value`；折线图使用 `time / value`，可按 `point` 分系列。历史保留重复时间、空值和原精度，统计仅使用有限数值。事件只依据实际起止时间计算已结束时长，结束时间为空标记“未结束”。
+
+| 技能 | 查询拆分 | 章节和展示 |
+| --- | --- | --- |
+| `mine-hydrology-analysis` | 类型分布、实时水流量、异常、三个指定关键测点历史，共6项 | 总体、实时、三类趋势、预警报警、总结；饼图、散点图、独立折线图及事件表 |
+| `mine-hydrology-indicator-analysis` | 指定指标的测点设备、实时、历史、事件，共4项 | 分布、实时、历史、事件、总结；饼图、散点图、分单位折线图及事件表 |
+| `workface-hydrology-analysis` | 指定工作面的分布状态、实时、液位/水温/水流量历史、异常，共6项 | 分布状态、实时、历史、事件、总结；饼图、分类型分单位柱状图、折线图及事件表 |
+| `hydrology-mine-realtime-overview` | 当前有效测点、实时水流量、预警报警，共3项 | 总览、实时、事件；数量状态表、散点图及事件表 |
+| `hydrology-single-point-recent` | 同一点位实时、历史、事件，共3项 | 当前、历史、事件、总结；实时表、折线图及事件表 |
+| `hydrology-daily-report` | 当天液位、水流量、温度历史及事件，共4项 | 日期范围、指标统计、事件、关注点；统计表及事件表，用户要求时展示日内曲线 |
+
+六个技能逐项要求调用查询子智能体，保留原完整测点名称、工作面范围与排除“麦垛山煤矿总排水日累计水流量”的适用规则。默认历史窗口沿用原技能：综合/指标/单点为2025年9月前7天，工作面为2025年9月，日报为2025年9月15日 `[00:00, 次日00:00)`；事件时间仅按相应技能已声明的口径处理。用户明确日期优先。无记录、字段缺失和查询失败分别说明，失败不等同于无事件，无事件不代表运行正常。
+
+| 环境变量（前缀 `HYDROLOGY_SEMANTIC_QUERY_`） | 默认值 |
+| --- | --- |
+| `CUBE_URL / CUBE_TOKEN` | `http://127.0.0.1:58025` / 空；Token 原样放入 Authorization 头 |
+| `TIMEOUT_SECONDS` | `30`，覆盖请求和响应体读取 |
+| `CONTINUE_WAIT_RETRIES / CONTINUE_WAIT_DELAY_SECONDS` | `6 / 0.1` |
+| `META_CACHE_TTL_SECONDS` | `300` |
+| `TIMEZONE` | `Asia/Shanghai` |
+| `MAX_AGENT_ITERATIONS` | `6`，通过官方 `agent/pre-step` 扩展点限制 |
+
+显式查询子智能体插件配置优先于环境变量，字段为对应 camelCase，例如 `cubeUrl`、`cubeToken` 和 `maxAgentIterations`。修改既有安装的 preset 组合后，重新执行本文的官方 `plugin --profile web add .` 安装命令并重启 `pnpm start`，在新会话选择新增场景。现有会话继续使用其原 preset。
+
+水文监测测试使用本地 Cube fixture 和固定模型响应，验证查询约束、失败分类、原生 spawn、跨会话拒绝、结果持久化及图表来源；浏览器测试同时验证原水害场景和新场景的正文图表、交互与刷新回放。运行 `pnpm test / typecheck / build / test:browser`，不需要业务接口或模型密钥。
+
+### 添加其他领域
 
 1. 在 `src/scenarios/<领域>/` 增加插件入口、配置、工具与业务模块。
 2. 在 `skills/<领域>/` 增加标准 `SKILL.md`，由该领域插件注册该目录。
