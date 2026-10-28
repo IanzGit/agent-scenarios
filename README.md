@@ -117,10 +117,10 @@ DSH_HOME="$PWD/.dsh" node --env-file-if-exists=.env ../deepseek-harness/apps/cli
 | `get_device_status` | `{}` | 区域、类型、在线离线统计表 |
 | `get_device_alarm` | `{}` | 单因素报警摘要、完整明细及四级阈值 |
 | `get_model_warning` | `{}` | 模型预警摘要、完整明细及判识信息 |
-| `get_warning_statistics` | `{}` | 类型、等级、每日事件数量统计表 |
+| `get_warning_statistics` | `{}` | 事件总数摘要；类型、等级、每日数量统计仅作图表数据源 |
 | `get_hydrological_trend` | `{start_time?, end_time?}` | 四项指标统计、预警次数及原始时间序列 |
 
-统一业务结果为 `title / summary / period? / tables`，趋势额外返回 `series`。每个表格包含 `title / columns / rows`；原始序列包含 `name / unit / source / sensor / points`。`output.render` 输出摘要和全部 Markdown 表格，数值最多显示两位小数，字符串阈值保留原始精度。`series` 供程序化调用使用，不展开到模型文本。
+统一业务结果为 `title / summary / period? / tables`，趋势额外返回 `series`。每个表格包含 `title / columns / rows`；原始序列包含 `name / unit / source / sensor / points`。`output.render` 输出摘要和展示用 Markdown 表格，数值最多显示两位小数，字符串阈值保留原始精度；标记 `chartOnly` 的表格仅作图表数据源，不进入模型文本。`series` 供程序化调用使用，不展开到模型文本。
 
 活动会话中，设备、预警统计和趋势查询额外返回 `chart_source` 目录：`source_id` 和每个数据集的 `id / title / columns / row_count`。只有最终成功的工具结果才发布来源；数据缓存按会话和轮次隔离，轮次结束后释放。无活动会话的程序化业务调用继续返回原有结果。
 

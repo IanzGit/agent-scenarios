@@ -3,7 +3,7 @@ import type { InferValue, ValueSchemaSpec } from '@deepseek-ai/dsh-tools'
 
 export type Row = Record<string, string | number | null>
 export type Period = { start: string; end: string }
-export type Table = { title: string; columns: string[]; rows: Row[] }
+export type Table = { title: string; columns: string[]; rows: Row[]; chartOnly?: boolean }
 export type ToolResult = { title: string; summary: string; period?: Period; tables: Table[] }
 
 export const resultSchema = {
@@ -19,14 +19,15 @@ export const resultSchema = {
         title: { type: 'string', required: true },
         columns: { type: 'array', items: { type: 'string' }, required: true },
         rows: { type: 'array', items: { type: 'object', additionalProperties: true }, required: true },
+        chartOnly: { type: 'boolean' },
       },
     } },
   },
 } as const satisfies ValueSchemaSpec
 
-/** 创建一个带明确列顺序的业务表格。 */
-export function table(title: string, columns: string[], rows: Row[]): Table {
-  return { title, columns, rows }
+/** 创建一个带明确列顺序的业务表格；chartOnly 表格仅作图表数据源，不渲染进模型文本。 */
+export function table(title: string, columns: string[], rows: Row[], chartOnly?: boolean): Table {
+  return { title, columns, rows, ...(chartOnly ? { chartOnly: true } : {}) }
 }
 
 /** 创建业务结果，不复制表格内容或生成展示元数据。 */
@@ -43,9 +44,9 @@ function cell(value: InferValue<{ type: 'json' }> | undefined): string {
     .replace(/\r\n?|\n/g, '<br>')
 }
 
-/** 输出全部表格行；原始时间序列不进入模型文本。 */
+/** 输出全部展示用表格行；chartOnly 表格与原始时间序列不进入模型文本。 */
 export function renderResult(_args: object, value: InferValue<typeof resultSchema>): { type: 'text'; text: string }[] {
-  const tables = value.tables.map(item => {
+  const tables = value.tables.filter(item => !item.chartOnly).map(item => {
     const title = `### ${cell(item.title)}`
     if (!item.rows.length) return `${title}\n\n无记录。`
     const line = (values: (InferValue<{ type: 'json' }> | undefined)[]) => `| ${values.map(cell).join(' | ')} |`

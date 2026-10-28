@@ -24,3 +24,16 @@ test('空表保留标题并明确说明无记录', () => {
   assert.equal(renderResult({}, result('报警', '最近30天无测点报警事件。', [table('超限报警表', ['预警指标'], [])]))[0].text,
     '最近30天无测点报警事件。\n\n### 超限报警表\n\n无记录。')
 })
+
+test('chartOnly 表格保留结构化数据但不进入模型文本', () => {
+  const source = result('统计', '摘要', [
+    table('展示表', ['名称'], [{ 名称: 'a' }]),
+    table('按类型统计', ['预警类型', '事件数量'], [{ 预警类型: '涌水量', 事件数量: 7 }], true),
+  ])
+  const content = renderResult({}, source)[0].text
+  assert.match(content, /### 展示表/)
+  assert.equal(content.includes('按类型统计'), false)
+  assert.equal(content.includes('涌水量'), false)
+  assert.equal(source.tables.length, 2)
+  assert.deepEqual(JSON.parse(JSON.stringify(source)), source)
+})

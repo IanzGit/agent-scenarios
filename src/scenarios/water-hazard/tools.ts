@@ -21,7 +21,7 @@ export function createTools(api: WaterHazardAPI, sources?: ChartSources) {
       execute: (_args, exec) => deviceAlarm(api, exec.signal) }),
     defineTool({ name: 'get_model_warning', description: '查询配置参考日期最近30天模型预警，说明关联指标和判识模型，保留全部处置和误报状态及完整明细表。', parameters: {}, output,
       execute: (_args, exec) => modelWarning(api, exec.signal) }),
-    defineTool({ name: 'get_warning_statistics', description: '查询预警统计页最近30天真实数据，返回按类型、等级和日期的完整数量统计表。', parameters: {}, output: chartOutput,
+    defineTool({ name: 'get_warning_statistics', description: '查询预警统计页最近30天真实数据，返回事件总数摘要；类型、等级和每日数量统计仅作为图表数据源。', parameters: {}, output: chartOutput,
       execute: async (_args, exec) => { const value = await warningStatistics(api, exec.signal); return withChartSource(value, exec, sources, warningDatasets(value)) } }),
     defineTool({ name: 'get_hydrological_trend', description: '查询矿井涌水量、排水量、ZK4长观孔水位、中央水仓水位的均值、极值和测点预警次数。默认截至配置参考日30天；显式日期成对提供，最多31天。结构化结果保留原始时间序列。',
       parameters: { start_time: { type: 'string', description: '开始日期 YYYY-MM-DD；未指定日期时省略。' }, end_time: { type: 'string', description: '结束日期 YYYY-MM-DD；与 start_time 同时提供。' } },

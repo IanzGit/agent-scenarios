@@ -82,7 +82,12 @@ test('根入口、参数校验、完整 Markdown 结果和插件卸载均通过�
       assert.equal(executed.isError, false, name)
       assert.equal(executed.meta, undefined)
       const content = executed.content.filter(block => block.type === 'text').map(block => block.text).join('')
-      assert.match(content, /\| .+ \|/)
+      if (name === 'get_warning_statistics') {
+        assert.equal(/\| .+ \|/.test(content), false)
+        assert.match(content, /网页预警统计/)
+      } else {
+        assert.match(content, /\| .+ \|/)
+      }
       assert.equal(content.includes('series'), false)
       assert.equal(content.includes('1.234567'), false)
     }
@@ -193,9 +198,12 @@ for (const scenario of ['overview', 'trend']) test(`固定模型响应驱动 ${s
     assert.equal(charts.length, 4)
     assert.deepEqual(JSON.parse(JSON.stringify(charts)), charts)
     assert.ok(charts.every(event => !JSON.stringify(event.data.message.content).includes('option')))
-    const businessCalls = new Set(calls.filter(event => TOOL_NAMES.some(name => name === event.data.name)).map(event => event.data.callId))
+    const businessCalls = new Map(calls.filter(event => TOOL_NAMES.some(name => name === event.data.name)).map(event => [event.data.callId, event.data.name]))
     const tableResults = results.filter(event => businessCalls.has(event.data.message.source.callId))
-    assert.ok(tableResults.every(event => event.data.message.content.some(block => block.type === 'text' && block.text.includes('| --- |'))))
+    assert.ok(tableResults.every(event => {
+      const hasTable = event.data.message.content.some(block => block.type === 'text' && block.text.includes('| --- |'))
+      return businessCalls.get(event.data.message.source.callId) === 'get_warning_statistics' ? !hasTable : hasTable
+    }))
     assert.equal(tableResults.length, scenario === 'trend' ? 1 : 4)
     assert.equal(adapter.requests.length, recordings[scenario].length)
     assert.ok(events.some(event => event.type === 'turn/end'))

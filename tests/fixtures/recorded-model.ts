@@ -11,7 +11,7 @@ export const recordings: Record<string, Step[]> = {
     chart('render_pie_chart', 'warning_types', '预警事件类型占比'),
     chart('render_pie_chart', 'warning_levels', '预警事件等级占比'),
     chart('render_bar_chart', 'warning_daily', '每日预警事件数量', 'time'),
-    { text: '# 矿井水文监测总体分析\n\n## 1. 监测设备情况\n\n设备共2套，在线1套，离线1套。\n\n[图表:$chart0]\n\n## 2. 预警报警情况\n\n### 单因素超限报警\n\n单因素报警1条。\n\n### 多因素模型预警\n\n模型预警1条。\n\n### 预警报警统计\n\n预警共2条。明细以工具返回的完整 Markdown 表格为准。\n\n类型分布：\n\n[图表:$chart1]\n\n等级分布：\n\n[图表:$chart2]\n\n每日数量：\n\n[图表:$chart3]' },
+    { text: '# 矿井水文监测总体分析\n\n## 1. 监测设备情况\n\n设备共2套，在线1套，离线1套。\n\n[图表:$chart0]\n\n## 2. 预警报警情况\n\n### 单因素超限报警\n\n单因素报警1条。\n\n### 多因素模型预警\n\n模型预警1条。\n\n### 预警报警统计\n\n预警共2条，统计分布以图表呈现。\n\n类型分布：\n\n[图表:$chart1]\n\n等级分布：\n\n[图表:$chart2]\n\n每日数量：\n\n[图表:$chart3]' },
   ],
   trend: [
     { tool: 'skill', args: { name: 'water-hazard-trend' } },

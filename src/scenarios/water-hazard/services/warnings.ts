@@ -103,9 +103,9 @@ export async function warningStatistics(api: WaterHazardAPI, signal: AbortSignal
   const dailyStats = [...daily].map(([name, value]) => ({ name, value }))
   const summary = total ? `最近30天（${period.start}至${period.end}）网页预警统计共${total}条事件，包含已处置、未处置及误报事件；按网页预警统计接口计数，时间统计按日展示。` : `最近30天无预警统计事件（${period.start}至${period.end}）。`
   return result('预警报警统计', summary, [
-    table('按类型统计', ['预警类型', '事件数量'], typeStats.map(item => ({ 预警类型: item.name, 事件数量: item.value }))),
-    table('按等级统计', ['预警等级', '事件数量'], levelStats.map(item => ({ 预警等级: item.name, 事件数量: item.value }))),
-    table('按时间统计', ['日期', '事件数量'], dailyStats.map(item => ({ 日期: item.name, 事件数量: item.value }))),
+    table('按类型统计', ['预警类型', '事件数量'], typeStats.map(item => ({ 预警类型: item.name, 事件数量: item.value })), true),
+    table('按等级统计', ['预警等级', '事件数量'], levelStats.map(item => ({ 预警等级: item.name, 事件数量: item.value })), true),
+    table('按时间统计', ['日期', '事件数量'], dailyStats.map(item => ({ 日期: item.name, 事件数量: item.value })), true),
   ], period)
 }
 

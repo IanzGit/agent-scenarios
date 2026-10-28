@@ -91,6 +91,7 @@ test('统计三张表来自相同数据，分类按优先级且缺事件日补�
   const report = await business.warningStatistics(signal())
   assert.match(report.summary, /共2条事件/)
   assert.equal(report.tables.length, 3)
+  assert.ok(report.tables.every(table => table.chartOnly))
   const daily = report.tables[2].rows
   assert.ok(Array.isArray(daily))
   assert.equal(daily.length, 30)
