@@ -1,7 +1,38 @@
-.agent-scenarios-charts {
+.agent-scenarios-chart-call {
   width: 100%;
   min-width: 0;
   color: inherit;
+  margin: 12px 0;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: 8px;
+  padding: 12px;
+  box-sizing: border-box;
+}
+
+.agent-scenarios-chart-call-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agent-scenarios-chart-call-header strong {
+  overflow-wrap: anywhere;
+}
+
+.agent-scenarios-chart-call-header [role="status"] {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.agent-scenarios-chart-call[data-chart-state="error"] [role="status"] {
+  color: #d74242;
+}
+
+.agent-scenarios-chart-call-output {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 8px 0 0;
 }
 
 .agent-scenarios-chart {
@@ -22,4 +53,9 @@
 
 @media (max-width: 600px) {
   .agent-scenarios-chart-canvas { height: 340px; }
+}
+
+.agent-scenarios-chart-response {
+  width: 100%;
+  min-width: 0;
 }

@@ -1,14 +1,10 @@
-/** Harness 的报告末尾图表扩展；独立 bundle 随插件加载和卸载。 */
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
-import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
-import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+/** 工具调用卡片复用的交互图表，独立管理 ECharts 实例。 */
+import { useEffect, useRef, useState } from 'react'
 import { init, use, type EChartsCoreOption } from 'echarts/core'
 import { LineChart, BarChart, PieChart, ScatterChart } from 'echarts/charts'
 import { TitleComponent, TooltipComponent, GridComponent, LegendComponent, DataZoomComponent, AriaComponent } from 'echarts/components'
 import { SVGRenderer } from 'echarts/renderers'
-import type { ChartCard } from './conversation.ts'
+import type { ChartCard } from './chart-meta.ts'
 
 use([LineChart, BarChart, PieChart, ScatterChart, TitleComponent, TooltipComponent, GridComponent, LegendComponent, DataZoomComponent, AriaComponent, SVGRenderer])
 
@@ -46,15 +42,3 @@ export function InteractiveChart({ chart }: { chart: ChartCard }) {
     <figcaption>{failed ? `图表显示失败：${chart.title}。` : chart.summary}</figcaption>
   </figure>
 }
-
-/** 读取当前轮独立的图表数据，不依赖会话仍在运行或来源缓存仍存在。 */
-export function ReportCharts({ turn }: PropsRuntime<'conversation.chat.turnTail'>) {
-  const source = turn.data.source('agent-scenarios-charts')
-  const charts = useSyncExternalStore(source.subscribe, source.getSnapshot)
-  if (!charts?.length) return null
-  return <section className="agent-scenarios-charts" aria-label="分析图表">
-    <h3>分析图表</h3>
-    {charts.map(chart => <InteractiveChart key={chart.chart_id} chart={chart} />)}
-  </section>
-}
-

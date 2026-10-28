@@ -6,7 +6,7 @@ const { name } = JSON.parse(await readFile(new URL('./package.json', import.meta
 await build({
   entryPoints: ['src/client/index.ts'], outfile: 'lib/client.js', bundle: true,
   platform: 'browser', format: 'cjs', target: 'es2023', jsx: 'automatic', minify: true,
-  external: ['react', 'react/jsx-runtime'], loader: { '.css': 'text' },
+  external: ['react', 'react/jsx-runtime', '@deepseek-ai/dsh-client-ui-primitives'], loader: { '.css': 'text' },
   banner: { js: `window.__ModuleLoader__.load({id:${JSON.stringify(name)},factory:(require)=>{var module={exports:{}};var exports=module.exports;` },
   footer: { js: 'return module.exports;}});' },
   define: { 'process.env.NODE_ENV': '"production"' },

@@ -15,7 +15,7 @@ import { renderBar } from '../src/tools/bar.ts'
 import { renderPie } from '../src/tools/pie.ts'
 import { renderStackedBar } from '../src/tools/stacked-bar.ts'
 import { renderScatter } from '../src/tools/scatter.ts'
-import { appendChart, chartFromMeta } from '../src/client/conversation.ts'
+import { chartFromMeta } from '../src/client/chart-meta.ts'
 import type { ChartDataset, ChartResult, ChartSelection, ChartSource, Json } from '../src/types.ts'
 
 const selection: ChartSelection = { source_id: 'source', dataset_id: 'values', title: '测试图', x_field: 'category', value_field: 'value' }
@@ -137,8 +137,7 @@ test('原生图表参数校验、持久协议与旧版本1元数据回放保持�
     assert.equal(first.content.some(block => block.type === 'text' && block.text.includes('series')), false)
     const meta = JSON.parse(JSON.stringify(first.meta))
     assert.ok(chartFromMeta(meta)?.option.series)
-    const cards = appendChart([], meta)
-    assert.equal(appendChart(cards, second.meta), cards)
+    assert.deepEqual(chartFromMeta(second.meta), chartFromMeta(meta))
     assert.equal(chartFromMeta({ agentScenariosChart: { version: 2, chart: {} } }), undefined)
     assert.equal((await execute(session, 'render_pie_chart', { ...args, source_id: 'forged' })).isError, true)
     assert.equal((await execute(session, 'render_pie_chart', { ...args, value_field: 123 })).isError, true)

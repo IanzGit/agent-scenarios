@@ -11,10 +11,10 @@ import { resolve, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium, expect } from '@playwright/test'
 import { parse, stringify } from 'yaml'
-import { recordings, recordedArgs } from '../fixtures/recorded-model.ts'
+import { recordings, recordedArgs, recordedText } from '../fixtures/recorded-model.ts'
 import { startFixtureServer } from '../fixtures/server.ts'
 
-test('Harness Web 展示两轮报告的八张图，悬浮、缩放、尺寸变化和刷新回放均可用', { timeout: 180000 }, async () => {
+test('Harness Web 在最终正文段落内展示图表，执行区折叠后仍可交互和刷新回放', { timeout: 180000 }, async () => {
   const root = fileURLToPath(new URL('../../', import.meta.url))
   const cli = resolve(root, '../deepseek-harness/apps/cli/lib/bin.js')
   const temp = await mkdtemp(join(tmpdir(), 'scenario-charts-web-'))
@@ -35,7 +35,7 @@ test('Harness Web 展示两轮报告的八张图，悬浮、缩放、尺寸变�
       if (!step) throw new Error(`固定响应耗尽：${scenario}/${position}`)
       const delta = 'tool' in step
         ? { tool_calls: [{ index: 0, id: `${scenario}-${position}`, type: 'function', function: { name: step.tool, arguments: JSON.stringify(recordedArgs(step.args, round.filter(message => message.role === 'tool').map(text))) } }] }
-        : { content: step.text }
+        : { content: recordedText(step.text, round.filter(message => message.role === 'tool').map(text)) }
       modelCalls++
       response.writeHead(200, { 'Content-Type': 'text/event-stream' })
       response.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { role: 'assistant', ...delta }, finish_reason: null }] })}\n\n`)
@@ -108,9 +108,17 @@ test('Harness Web 展示两轮报告的八张图，悬浮、缩放、尺寸变�
       const input = page.locator('[data-composer-input][contenteditable="true"]')
       await input.fill('当前矿井总体水害监测预警情况汇总分析')
       await input.press('Enter')
-      const cards = page.locator('.agent-scenarios-chart')
+      const cards = page.locator('[data-answer-chart-body] .agent-scenarios-chart')
+      const calls = page.locator('.agent-scenarios-chart-call')
+      await expect(calls).toHaveCount(4, { timeout: 30000 })
       await expect(cards).toHaveCount(4, { timeout: 30000 })
       await expect(page.locator('.agent-scenarios-chart svg')).toHaveCount(4)
+      await expect(page.locator('.agent-scenarios-chart-call[data-chart-state="complete"]')).toHaveCount(4)
+      await expect(page.getByRole('region', { name: '分析图表', exact: true })).toHaveCount(0)
+      assert.ok(await calls.evaluateAll(elements => elements.every(element =>
+        element.querySelectorAll('.agent-scenarios-chart').length === 0)))
+      assert.ok(await cards.evaluateAll(elements => elements.every(element => !element.closest('[data-chat-call-id]'))))
+      await expect(page.locator('[data-answer-chart-body]')).not.toContainText('[图表:')
       const first = cards.first()
       await first.scrollIntoViewIfNeeded()
       await first.locator('svg path[fill]:not([fill="none"])').first().hover()
@@ -118,6 +126,9 @@ test('Harness Web 展示两轮报告的八张图，悬浮、缩放、尺寸变�
       await input.fill('近30天关键水文指标的变化趋势')
       await input.press('Enter')
       await expect(cards).toHaveCount(8, { timeout: 30000 })
+      await expect(calls).toHaveCount(8)
+      await expect(page.locator('.agent-scenarios-chart-call[data-chart-state="complete"]')).toHaveCount(8)
+      assert.ok(await cards.evaluateAll(elements => elements.every(element => !element.closest('[data-chat-call-id]'))))
       const line = page.locator('[data-chart-type="line"]').first()
       await line.scrollIntoViewIfNeeded()
       await line.locator('svg').hover({ position: { x: 180, y: 160 } })
@@ -137,10 +148,14 @@ test('Harness Web 展示两轮报告的八张图，悬浮、缩放、尺寸变�
       await expect(line.locator('svg')).not.toHaveAttribute('width', width!)
       const ids = await cards.evaluateAll(elements => elements.map(element => element.getAttribute('data-chart-id')))
       const callsBeforeReload = modelCalls
+      const queriesBeforeReload = fixture.requests.length
       await page.reload()
       await expect(cards).toHaveCount(8, { timeout: 30000 })
+      await expect(calls).toHaveCount(8)
+      await expect(page.getByRole('region', { name: '分析图表', exact: true })).toHaveCount(0)
       assert.deepEqual(await cards.evaluateAll(elements => elements.map(element => element.getAttribute('data-chart-id'))), ids)
       assert.equal(modelCalls, callsBeforeReload)
+      assert.equal(fixture.requests.length, queriesBeforeReload)
       assert.deepEqual(modelErrors, [])
       assert.deepEqual(pageErrors, [])
       await mkdir(join(root, 'test-results'), { recursive: true })

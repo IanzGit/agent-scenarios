@@ -33,8 +33,11 @@ agent-scenarios/
 │   │   │   └── line.ts / bar.ts / pie.ts / stacked-bar.ts / scatter.ts
 │   │   └── client/
 │   │       ├── index.ts             # 客户端注册
-│   │       ├── Charts.tsx           # 图表列表和 ECharts 实例
-│   │       ├── conversation.ts      # 会话结果投影与回放
+│   │       ├── Charts.tsx           # 交互图表及 ECharts 实例
+│   │       ├── ChartToolView.tsx    # 五类工具共用的状态与摘要卡片
+│   │       ├── ChartResponseBody.tsx # 正文图表引用及历史回放
+│   │       ├── chart-data.ts / chart-references.ts # 本轮元数据投影与引用解析
+│   │       ├── chart-meta.ts        # 持久化图表元数据解析
 │   │       └── styles.css           # 展示样式
 │   ├── tests/                       # 图表及服务生命周期测试
 │   └── esbuild.config.mjs           # 浏览器 factory 构建
@@ -135,7 +138,9 @@ DSH_HOME="$PWD/.dsh" node --env-file-if-exists=.env ../deepseek-harness/apps/cli
 
 设备类型按区域汇总后绘制一张饼图；预警类型、等级各一张饼图，每日数量一张柱状图。趋势的涌水量、排水量、ZK4水位、中央水仓水位各一张独立折线图。两个 skill 规定这些调用关系；用户只问单项时只生成相关图。
 
-图表工具向模型输出图表 ID、标题、状态和摘要；完整配置存于 `output.presentationMeta` 的 `agentScenariosChart` 版本1载荷，随 Harness 会话记录保存。图表插件的 Client 通过 `conversation.chat.turnTail` 在报告末尾集中展示，支持悬浮提示、图例切换、缩放、主题与容器尺寸变化。刷新和历史查看从工具结果恢复，无需重新查询或调用模型；同一来源、参数和图表类型产生稳定 ID，重复调用不重复展示。
+图表工具向模型输出图表 ID、标题、状态和摘要；完整配置存于 `output.presentationMeta` 的 `agentScenariosChart` 版本1载荷，随 Harness 会话保存。模型在最终回答的对应分析段落后，独立一行输出 `[图表:真实chart_id]`。Client 在 `conversation.chat.response.body` 中从本轮持久化元数据查找配置，复用 `InteractiveChart` 内嵌渲染，保留悬浮、图例、缩放、主题、尺寸适配和刷新回放。代码块和行内示例中的引用不作为图表；找不到本轮ID时显示不可用说明，不重新查询。工具调用卡片仅展示阶段和摘要，报告末尾不再通过 `turnTail` 汇总。
+
+该正文插槽由同工作区 Harness 的 `ui-chat` 前端提供；未安装图表插件时继续使用原生 Markdown。旧会话的最终回答没有引用标记时，在最终正文末尾恢复本轮已保存的图表；有引用的回答按标记位置展示。查询、来源注册及后端生成协议保持不变。
 
 图表插件的三个入口职责固定：
 
@@ -143,7 +148,7 @@ DSH_HOME="$PWD/.dsh" node --env-file-if-exists=.env ../deepseek-harness/apps/cli
 | --- | --- |
 | `dsh-agent-charts` | 全局 Host 服务，导出 `ChartSources`、数据集类型和来源目录 schema；不注册模型工具 |
 | `dsh-agent-charts/tools` | 在调用者 preset 内注册五类图表工具 |
-| `dsh-agent-charts/client` | 标准浏览器入口，由 `dsh.client` 自动加载，与 Host 共用纯数据协议 |
+| `dsh-agent-charts/client` | 标准浏览器入口，声明依赖 `dsh-client-ui-tool`，由 `dsh.client` 自动加载，与 Host 共用纯数据协议 |
 
 图表服务拥有全部来源缓存和会话监听；业务插件仅声明 `inject: ['tools', 'skills', 'systemPrompt', 'chartSources']`，使用 `ctx.chartSources.prepare(exec, datasets)` 返回目录。业务工具不管理图表服务的生命周期，通用表格模块也不依赖图表协议。
 

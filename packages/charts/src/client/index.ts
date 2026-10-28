@@ -1,18 +1,20 @@
-/** 图表插件的 Client 入口，只负责注册会话投影、展示插槽及样式。 */
+/** 图表插件的 Client 入口，按工具名注册调用卡片及样式。 */
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
-import { chartDefinition } from './conversation.ts'
-import { ReportCharts } from './Charts.tsx'
+import { ChartToolView, CHART_TOOL_NAMES } from './ChartToolView.tsx'
+import { ChartResponseBody } from './ChartResponseBody.tsx'
+import { chartDefinition } from './chart-data.ts'
 import styles from './styles.css'
 
 export const inject = ['slots', 'uiConversation']
 
-/** 所有贡献随插件卸载释放，保留 Harness 原有工具卡片及报告正文。 */
+/** 五类工具共用一套卡片，注册及样式随插件卸载释放。 */
 export function apply(ctx: Context): void {
   ctx.uiConversation.events.register(chartDefinition)
-  ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
-    name: 'conversation.chat.turnTail', id: 'agent-scenarios-charts', order: 100,
-  }, ReportCharts))
+  ctx.slots.inject('conversation.chat.response.body', () => ctx.slots.register({ name: 'conversation.chat.response.body' }, ChartResponseBody))
+  ctx.slots.inject('tool.call.toolview', function* () {
+    for (const name of CHART_TOOL_NAMES) yield ctx.slots.register({ name: 'tool.call.toolview', key: name }, ChartToolView)
+  })
   ctx.effect(() => {
     const style = document.createElement('style')
     style.textContent = styles
