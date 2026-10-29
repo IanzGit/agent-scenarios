@@ -8,7 +8,7 @@ import { promisify } from 'node:util'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { chromium, expect } from '@playwright/test'
 import { parse, stringify } from 'yaml'
 import { recordings, recordedArgs, recordedText } from '../fixtures/recorded-model.ts'
@@ -80,10 +80,23 @@ test('Harness Web 在最终正文段落内展示图表，执行区折叠后仍�
     preset.config.plugins[0].config = { apiBaseUrl: fixture.url }
     const queryPreset = scenarioPatch[0].insert.find((entry: any) => entry.id === 'preset-hydrology-query')
     queryPreset.config.plugins[0].config = { cubeUrl: cube.url }
+    const latePlugin = join(temp, 'late-notice.mjs')
+    await writeFile(latePlugin, `
+import { createUserMessage } from ${JSON.stringify(pathToFileURL(join(root, 'node_modules/@deepseek-ai/dsh-llm/lib/index.js')).href)};
+export const inject = ['agents'];
+export function apply(ctx) {
+  const delivered = new Set();
+  ctx.on('agent/turn-stopping', ({ agent }) => {
+    if (delivered.has(agent.id)) return;
+    if (!agent.session.ownEvents().some(e => e.type === 'plugin:dsh-agent-scenarios/parent-task' && e.data.kind === 'published')) return;
+    delivered.add(agent.id);
+    agent.followup(createUserMessage({ source: { kind: 'subagent-settled', form: 'notice', summary: '迟到查询通知', senderSessionId: 'late-fixture' }, content: [{ type: 'text', text: '之前查询的迟到完成通知。' }] }));
+  });
+}`)
     const patchPath = join(temp, 'browser.patch.yml')
     await writeFile(patchPath, stringify([
       { id: 'directory-picker', disabled: true },
-      { insert: [{ id: 'directory-picker-browse', name: '@deepseek-ai/dsh-host-directory-picker-browse' }, { id: 'ui-directory-picker-browse', name: '@deepseek-ai/dsh-client-ui-directory-picker-browse' }] },
+      { insert: [{ id: 'late-notice-fixture', name: pathToFileURL(latePlugin).href }, { id: 'directory-picker-browse', name: '@deepseek-ai/dsh-host-directory-picker-browse' }, { id: 'ui-directory-picker-browse', name: '@deepseek-ai/dsh-client-ui-directory-picker-browse' }] },
       { id: 'preset-water-hazard', config: preset.config },
       { id: 'preset-hydrology-query', config: queryPreset.config }, ...overlay,
     ]))
@@ -178,16 +191,39 @@ test('Harness Web 在最终正文段落内展示图表，执行区折叠后仍�
       await expect(page.getByRole('button', { name: '水文监测查数', exact: true })).toBeVisible()
       await input.fill('分析主斜井水位历史情况')
       await input.press('Enter')
-      await expect(cards).toHaveCount(1, { timeout: 30000 })
-      await expect(calls).toHaveCount(1)
-      await expect(page.locator('[data-answer-chart-body]').last()).toContainText('主斜井水位监测分析')
-      await expect(page.locator('[data-answer-chart-body]').last()).not.toContainText('[图表:')
+      const report = page.locator('[data-hydrology-report-id]')
+      await expect(report).toHaveCount(1, { timeout: 30000 })
+      await expect(cards).toHaveCount(2)
+      await expect(calls).toHaveCount(0)
+      await expect(page.getByText('收到状态更新，已发布报告保持不变。', { exact: true })).toBeVisible()
+      const reportId = await report.getAttribute('data-hydrology-report-id')
+      const process = page.locator('button[data-turn-process][aria-expanded]').last()
+      await expect(process).toHaveAttribute('aria-expanded', 'false')
+      for (const title of ['主斜井水位监测分析', '历史变化', '综合结论']) {
+        await expect(report.getByRole('heading', { name: title, exact: true })).toBeVisible()
+      }
+      await expect(report.locator('.agent-scenarios-chart')).toHaveCount(2)
+      await expect(report).not.toContainText(/\[图表:|已调用工具|Called tools/)
+      await expect(report.locator('[data-step-process]')).toHaveCount(0)
+      await process.click()
+      await expect(process).toHaveAttribute('aria-expanded', 'true')
+      await process.click()
+      await expect(process).toHaveAttribute('aria-expanded', 'false')
+      await expect(report.getByRole('heading', { name: '历史变化', exact: true })).toBeVisible()
+      await expect(report.getByRole('heading', { name: '综合结论', exact: true })).toBeVisible()
       const hydrologyIds = await cards.evaluateAll(elements => elements.map(element => element.getAttribute('data-chart-id')))
       const hydrologyModelCalls = modelCalls
       const hydrologyQueries = cube.requests.length
       await page.reload()
-      await expect(cards).toHaveCount(1, { timeout: 30000 })
+      await expect(cards).toHaveCount(2, { timeout: 30000 })
+      await expect(process).toHaveAttribute('aria-expanded', 'false')
+      for (const title of ['主斜井水位监测分析', '历史变化', '综合结论']) {
+        await expect(report.getByRole('heading', { name: title, exact: true })).toBeVisible()
+      }
+      await expect(report.locator('.agent-scenarios-chart')).toHaveCount(2)
+      await expect(report).not.toContainText(/\[图表:|已调用工具|Called tools/)
       assert.deepEqual(await cards.evaluateAll(elements => elements.map(element => element.getAttribute('data-chart-id'))), hydrologyIds)
+      await expect(report).toHaveAttribute('data-hydrology-report-id', reportId!)
       assert.equal(modelCalls, hydrologyModelCalls)
       assert.equal(cube.requests.length, hydrologyQueries)
       assert.deepEqual(modelErrors, [])

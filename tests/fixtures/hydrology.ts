@@ -26,10 +26,11 @@ export function queryFor(model = HISTORY): SemanticQuery {
     time_dimensions: [], order: [], limit: null, offset: 0, ungrouped: true }
 }
 
-export type CubeFixtureOptions = { status?: number; continueWait?: number; invalid?: boolean; empty?: boolean; delay?: number; failModel?: string; rowCount?: number }
+export type CubeFixtureOptions = { status?: number; continueWait?: number; invalid?: boolean; empty?: boolean; delay?: number; failModel?: string; rowCount?: number; failLoads?: number }
 export async function startCubeFixture(options: CubeFixtureOptions = {}) {
   const requests: { path: string; query?: Record<string, unknown>; authorization?: string }[] = []
   let waits = 0
+  let failedLoads = 0
   const server = createServer(async (request, response) => {
     const chunks: Buffer[] = []
     for await (const chunk of request) chunks.push(Buffer.from(chunk))
@@ -38,7 +39,10 @@ export async function startCubeFixture(options: CubeFixtureOptions = {}) {
     requests.push({ path, query: body?.query, authorization: request.headers.authorization })
     if (options.delay) await new Promise(resolve => setTimeout(resolve, options.delay))
     const failure = options.failModel && Array.isArray(body?.query.dimensions) && body.query.dimensions.some(name => String(name).startsWith(`${options.failModel}.`))
-    response.writeHead(failure ? 401 : options.status ?? 200, { 'Content-Type': 'application/json' })
+    const transient = path === 'load' && failedLoads < (options.failLoads ?? 0)
+    if (transient) failedLoads++
+    response.writeHead(failure ? 401 : transient ? 503 : options.status ?? 200, { 'Content-Type': 'application/json' })
+    if (transient) { response.end(JSON.stringify({ error: 'temporarily unavailable' })); return }
     if (failure) { response.end(JSON.stringify({ error: 'unauthorized' })); return }
     if (options.invalid) { response.end('invalid JSON'); return }
     if (path === 'meta') { response.end(JSON.stringify(cubeMeta())); return }

@@ -19,7 +19,10 @@
       "types": "./lib/types/types.d.ts",
       "default": "./lib/types.js"
     },
-    "./client": "./lib/client.js",
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -64,7 +67,7 @@
   },
   "scripts": {
     "build:host": "tsc -p tsconfig.build.json",
-    "build": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('lib', { recursive: true, force: true })\" && pnpm build:host && node esbuild.config.mjs",
+    "build": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('lib', { recursive: true, force: true })\" && pnpm build:host && tsc -p tsconfig.client.build.json && node esbuild.config.mjs",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.client.json",
     "test": "node esbuild.config.mjs && tsx --test tests/*.test.ts"
   }

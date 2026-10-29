@@ -6,11 +6,13 @@ description: 触发条件：用户要求麦垛山煤矿 130608 或 110205 工作
 
 ## Harness 任务拆分与执行
 
-1. 加载本 skill 后，一次性列出完成问题所需的全部查询小任务。下表每一行都是一个独立查询小任务，每项必须调用 query_hydrology，由水文查询子智能体完成查询。不要直接查询 Cube，不创建父智能体或报告子智能体。
-2. 每次委派的 description 写简短任务名称；prompt 必须独立写全业务对象、指标、地点、时间范围、过滤及排除条件、所需字段和时间排序。用户条件优先，不能仅在总体计划中声明条件。跨指标、跨数据源拆分；依赖任务先读取上游结果，只传递下游真正需要的字段。
-3. 每次最多启动三个相互独立的查询。query_hydrology 立即返回 subagentId，等待运行时完成通知；不要轮询，不能把启动确认当成查询结果。只剩等待时结束本次响应，全部查询完成后再组织报告。
-4. 完成通知到达后，通过 get_hydrology_query_result({subagent_id: 实际subagentId}) 读取真实结果。最终展示轮统一读取全部所需结果、绘图并输出报告；为依赖任务提前读取过的结果也需在展示轮重新读取，取得当前轮有效的图表来源。
-5. 每项只完成一次最终查询。一个来源失败或无数据不影响其他成功来源；依赖失败时跳过依赖任务并说明原因，不用其他来源补齐。综合总结复用前述结论，不重新查询或增加图表。
+1. 加载本 skill 后，将下表每一行作为 plan.queries 中一个有唯一 id 的查询，一次调用 query_hydrology({plan}) 提交完整业务计划；不要逐个调用子智能体。
+2. 每项 query.prompt 独立写全业务对象、指标、地点、时间范围、过滤及排除条件、所需字段和排序。用户条件优先；跨指标、跨数据源拆分。依赖通过 depends_on 声明，inputs 用 {query_id, columns} 指定需要传递的真实上游字段。
+3. 在 plan.charts 声明图表意图：id、query_id、dataset、type、title、x_field、value_field，可选 series_field。dataset 可为精确数据集ID或 history / realtime 族；服务依据实际类型和单位拆分绘图。
+4. plan.report 必须包含 title 和 sections；sections 是最终报告必须按顺序出现的二级章节标题。报告内容按下表分析部分组织。
+5. 工具返回 task_id 后结束本次响应，等待 hydrology-task-ready 集中通知。父任务服务默认每父会话最多3个并发查询、依赖、受控重试及绘图；不轮询，不根据子会话 closing message 重复派发。
+6. 收到集中通知后，调用 get_hydrology_query_result({task_id}) 读取已收敛的真实结果、状态和图表ID。按计划撰写完整 Markdown，通过 publish_hydrology_report({task_id, markdown}) 发布；普通回复不算报告发布。
+7. 一个来源失败或无数据不影响其他成功来源；依赖缺少可用输入时由服务跳过。取消必须得到用户明确要求，再调用 cancel_hydrology_task({task_id})；发布后不覆盖报告。
 
 ## 本技能业务约束
 
@@ -21,12 +23,12 @@ description: 触发条件：用户要求麦垛山煤矿 130608 或 110205 工作
 
 | 步骤 | 查询要求 | 执行方式 |
 | ---- | ------------------------------------------------------ | --- |
-| 1 | 查询监测点的类型分布和设备状态。 | query_hydrology → get_hydrology_query_result |
-| 2 | 查询各监测点的实时值。 | query_hydrology → get_hydrology_query_result |
-| 3 | 查询目标时间范围内液位监测类型对应监测点的历史趋势。 | query_hydrology → get_hydrology_query_result |
-| 4 | 查询目标时间范围内水温监测类型对应监测点的历史趋势。 | query_hydrology → get_hydrology_query_result |
-| 5 | 查询目标时间范围内水流量监测类型对应监测点的历史趋势。 | query_hydrology → get_hydrology_query_result |
-| 6 | 查询目标时间范围内的预警、报警、断电和其他异常事件。 | query_hydrology → get_hydrology_query_result |
+| 1 | 查询监测点的类型分布和设备状态。 | plan.queries 中一个查询 |
+| 2 | 查询各监测点的实时值。 | plan.queries 中一个查询 |
+| 3 | 查询目标时间范围内液位监测类型对应监测点的历史趋势。 | plan.queries 中一个查询 |
+| 4 | 查询目标时间范围内水温监测类型对应监测点的历史趋势。 | plan.queries 中一个查询 |
+| 5 | 查询目标时间范围内水流量监测类型对应监测点的历史趋势。 | plan.queries 中一个查询 |
+| 6 | 查询目标时间范围内的预警、报警、断电和其他异常事件。 | plan.queries 中一个查询 |
 
 ## 报告分析与展示建议
 
@@ -38,14 +40,14 @@ description: 触发条件：用户要求麦垛山煤矿 130608 或 110205 工作
 | 4. 预警报警分析 | 分析预警报警事件，说明事件状态、起止时间、持续情况和事件期间统计值；查询成功且无事件记录时直接说明时间范围内无预警报警事件。 | 表格，预警报警明细。 |
 | 5. 综合总结 | 总结指定工作面的运行状况、主要变化和关注点。 | 以文字归纳已有结论。 |
 
-## 现有图表工具与正文引用
+## 图表意图与报告引用
 
-- 只使用 get_hydrology_query_result 返回的 chart_source.source_id 和目录内真实 dataset_id，不传数据数组或图表配置，不复用旧轮来源。
-- 类型分布使用 point_types，名称分布使用 point_names：调用 render_pie_chart，x_field 为 category，value_field 为 count。状态数量使用 value_statuses、device_statuses 的统计表，缺少该目录时不编造分类或数量。
-- realtime_ 前缀数据集用于实时展示。散点图调用 render_scatter_chart，x_field 为 point，value_field 为 value；该工具将数值绘于横轴、测点分类绘于纵轴。工作面实时柱状图调用 render_bar_chart，使用相同字段。
-- history_ 前缀数据集用于历史趋势：调用 render_line_chart，x_field 为 time，value_field 为 value，series_field 为 point。按监测类型及单位分别使用目录中的数据集，同类型同单位可以多测点分系列。数据集保留重复采样和空值断点，不聚合、插值或采样。
-- 单位、数值、时间和统计全部依据实际返回数据；单位缺失明确标注，不能猜测。不得将历史采样条数当成测点数量；名称缺失不能据此判定设备故障。
-- 表中的图表要求仅在对应数据集存在且有有效数值时执行。图表工具失败或 no_data 时说明不能绘图，保留其他结果，不反复调用同一失败图表。
-- 图表状态为 rendered 时，在对应章节的分析段落后独立一行写 [图表:真实chart_id]，使用工具返回的真实ID，每个ID只引用一次；失败或 no_data 不输出引用。不输出 ECharts 配置。
-- 按本 skill 的分析部分组织章节；每章先给出有证据支持的简短结论，再展示相关统计、明细和图表。保留完整预警报警明细；原始历史采样可用于曲线和确定性统计，不要求逐点抄写成最终报告。
-- outcome=error 是查询失败，不是无事件；只有事件查询成功且零记录时才说明相应范围内未查到事件。字段缺失或没有监测数据时不下运行正常结论，不推断故障原因或未来趋势。
+- 图表由父任务服务自动生成，不直接调用 render_* 工具，不传原始数据数组或 ECharts 配置。
+- 类型分布使用 dataset=point_types，名称分布使用 point_names：type=pie，x_field=category，value_field=count；状态分布可用 value_statuses / device_statuses。
+- 实时展示使用 dataset=realtime：type=scatter，x_field=point，value_field=value；工作面实时柱状图使用 type=bar，字段相同。
+- 历史趋势使用 dataset=history：type=line，x_field=time，value_field=value，series_field=point。服务按类型与单位拆分，并保留重复采样、空值断点和原精度。
+- 查询失败、无数据、字段不匹配或没有可绘图数值时，服务记录原因；成文时说明缺口，不反复查询或绘图。
+- 最终 Markdown 从 plan.report.title 对应的一级标题开始，并按顺序包含 plan.report.sections 中全部二级章节及正文。在对应分析段落后独立一行写 [图表:真实chart_id]，每张成功图表引用一次；失败或无数据图表不引用，不编造ID。
+- 单位、时间、数值和统计全部依据实际结果；单位缺失明确标注，不能猜测。不得把历史采样条数当成测点数，名称缺失不能据此判定设备故障。
+- 每章先给出有证据支持的简短结论，再展示相关统计、明细和图表。保留完整预警报警明细；原始历史采样用于曲线和确定性统计，不要求逐点抄写。
+- 字段缺失、无数据和查询失败分别说明；只有事件查询成功且零记录时才说明相应范围内未查到事件。无事件不等同于运行正常，不推断故障原因或未来趋势。

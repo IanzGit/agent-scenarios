@@ -1,6 +1,7 @@
 /** 无密钥模型录制，驱动原生父子会话及最终图表引用。 */
 import { LlmAdapter, ToolCallId, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import { HISTORY, REALTIME, queryFor } from './hydrology.ts'
+import type { TaskPlan } from '../../src/scenarios/hydrology-monitoring/task-protocol.ts'
 
 export function hydrologyStep(messages: { role: string; text: string; name?: string }[], tools: string[]): { tool: string; args: Record<string, unknown> } | { text: string } {
   const observations = messages.filter(message => message.role === 'tool').map(message => message.text)
@@ -19,23 +20,27 @@ export function hydrologyStep(messages: { role: string; text: string; name?: str
   const prompt = messages.find(message => message.role === 'user')?.text ?? ''
   const partial = prompt.includes('部分失败')
   if (!observations.length) return { tool: 'skill', args: { name: 'hydrology-single-point-recent' } }
-  const ids = observations.flatMap(text => [...text.matchAll(/started subagent ([^\s]+)/g)].map(match => match[1]))
-  if (!ids.length) return { tool: 'query_hydrology', args: { description: '主斜井水位历史', prompt: '查询主斜井水位2025年9月前七天历史采样，返回测点、单位和监测时间，按时间升序。' } }
-  if (partial && ids.length < 2) return { tool: 'query_hydrology', args: { description: '主斜井水位实时', prompt: '查询主斜井水位实时值和状态，不附加历史时间过滤。' } }
-  const completed = messages.filter(message => message.role === 'user' && message.text.includes('subagent') && /completed|finished|ended/.test(message.text)).map(message => message.text).join('\n')
-  if (!ids.every(id => completed.includes(id))) return { text: '正在等待查询完成通知。' }
-  const collected = observations.filter(text => text.includes('查询状态：'))
-  if (collected.length < ids.length) return { tool: 'get_hydrology_query_result', args: { subagent_id: ids[collected.length] } }
-  const available = observations.flatMap(text => {
-    const marker = '可绘图数据集（使用来源ID调用图表工具）：\n'
-    const position = text.indexOf(marker)
-    if (position < 0) return []
-    const source = JSON.parse(text.slice(position + marker.length).split('\n\n(Omitted ')[0]) as { source_id: string; datasets: { id: string; title: string }[] }
-    return source.datasets.filter(dataset => dataset.id.startsWith('history_') && dataset.title.includes('（m）')).map(dataset => ({ source_id: source.source_id, dataset_id: dataset.id }))
+  const values = observations.flatMap(text => {
+    try { const value: unknown = JSON.parse(text); return value && typeof value === 'object' && 'task_id' in value ? [value as { task_id: string; phase: string; queries?: unknown[]; charts?: { status: string; chart_id?: string }[] }] : [] }
+    catch { return [] }
   })
-  const chart = observations.map(text => /图表ID：([a-f0-9]{24})；状态：rendered/.exec(text)).find(Boolean)?.[1]
-  if (available.length && !chart) return { tool: 'render_line_chart', args: { ...available[0], title: '主斜井水位历史趋势', x_field: 'time', value_field: 'value', series_field: 'point' } }
-  return { text: `# 主斜井水位监测分析\n\n## 历史变化\n\n${available.length ? `历史采样与统计已取得，曲线按实际单位展示。\n\n[图表:${chart}]` : '没有可展示的历史趋势；以查询状态说明为准。'}${partial ? '\n\n## 当前状态\n\n实时查询认证失败，保留已成功的历史分析，不据此判断运行正常。' : ''}` }
+  const task = values.at(-1)
+  if (task?.phase === 'published' || task?.phase === 'cancelled') return { text: '收到状态更新，已发布报告保持不变。' }
+  if (!task) return { tool: 'query_hydrology', args: { plan: hydrologyPlan(partial) } }
+  if (task.phase === 'composing' && task.queries) {
+    const charts = task.charts?.filter(chart => chart.status === 'rendered').map(chart => `[图表:${chart.chart_id}]`).join('\n\n') ?? ''
+    return { tool: 'publish_hydrology_report', args: { task_id: task.task_id, markdown: `# 主斜井水位监测分析\n\n## 历史变化\n\n${charts ? `历史采样与统计已取得，曲线按实际单位展示。\n\n${charts}` : '没有可展示的历史趋势；以查询状态说明为准。'}${partial ? '\n\n## 当前状态\n\n实时查询认证失败，保留已成功的历史分析，不据此判断运行正常。' : ''}\n\n## 综合结论\n\n${charts ? '历史观测以已取得的采样和统计为准，不据此判断当前运行状态。' : '本次缺少可用历史数据，不能据此判断趋势或运行状态。'}` } }
+  }
+  return { tool: 'get_hydrology_query_result', args: { task_id: task.task_id } }
+
+}
+
+export function hydrologyPlan(partial = false): TaskPlan {
+  return { title: '主斜井水位分析', queries: [
+    { id: 'history', prompt: '查询主斜井水位2025年9月前七天历史采样，返回测点、单位和监测时间，按时间升序。', depends_on: [], inputs: [] },
+    ...(partial ? [{ id: 'realtime', prompt: '查询主斜井水位实时值和状态，不附加历史时间过滤。', depends_on: [], inputs: [] }] : []),
+  ], charts: [{ id: 'history-chart', query_id: 'history', dataset: 'history', type: 'line', title: '主斜井水位历史趋势', x_field: 'time', value_field: 'value', series_field: 'point' }],
+  report: { title: '主斜井水位监测分析', sections: ['历史变化', ...(partial ? ['当前状态'] : []), '综合结论'] } }
 }
 
 export class HydrologyAdapter extends LlmAdapter {

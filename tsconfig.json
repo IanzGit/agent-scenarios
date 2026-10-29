@@ -18,5 +18,8 @@
     "src/**/*.ts",
     "tests/**/*.ts"
   ],
-  "exclude": ["tests/browser"]
+  "exclude": [
+    "tests/browser",
+    "src/client"
+  ]
 }

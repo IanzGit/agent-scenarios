@@ -1,61 +1,67 @@
-/** 水文监测查数 preset 的技能和结果读取插件。 */
+/** 水文主智能体只提交计划、读取父任务及发布报告，不直接派发子查询。 */
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
-import { SessionId } from '@deepseek-ai/dsh-session'
-import type {} from '@deepseek-ai/dsh-session-query'
-import type {} from '@deepseek-ai/dsh-subagent'
 import * as filesystemSkills from '@deepseek-ai/dsh-skill-filesystem'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import type {} from 'dsh-agent-charts'
-import { chartResultSchema, renderChartResult, withChartSource } from '../../shared/chart-result.ts'
-import { receiptFromMeta, type QueryReceipt, type QueryRecord } from './protocol.ts'
-import type {} from './results.ts'
-import { presentQuery } from './presentation.ts'
+import type { InferValue } from '@deepseek-ai/dsh-tools'
+import { z } from 'zod'
+import type {} from './parent-tasks.ts'
+import type { ParentTask } from './task-protocol.ts'
 
 export const name = 'hydrology-monitoring'
-export const inject = ['tools', 'skills', 'systemPrompt', 'chartSources', 'sessionQuery', 'subagents', 'hydrologyQueryResults']
+export const inject = ['tools', 'skills', 'hydrologyParentTasks']
+const string = { type: 'string' } as const
+const strings = { type: 'array', items: string } as const
+const plan = { type: 'object', additionalProperties: false, required: true, properties: {
+  title: { ...string, required: true },
+  queries: { type: 'array', required: true, items: { type: 'object', additionalProperties: false, properties: {
+    id: { ...string, required: true }, prompt: { ...string, required: true }, depends_on: strings,
+    inputs: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
+      query_id: { ...string, required: true }, columns: { ...strings, required: true },
+    } } },
+  } } },
+  charts: { type: 'array', required: true, items: { type: 'object', additionalProperties: false, properties: {
+    id: { ...string, required: true }, query_id: { ...string, required: true }, dataset: { ...string, required: true, description: '实际数据集ID，或 history / realtime 数据集族；族按真实类型及单位分别绘图。' },
+    type: { type: 'string', enum: ['line', 'bar', 'pie', 'scatter', 'stacked_bar'], required: true },
+    title: { ...string, required: true }, x_field: { ...string, required: true }, value_field: { ...string, required: true }, series_field: string,
+  } } },
+  report: { type: 'object', required: true, additionalProperties: false, properties: {
+    title: { ...string, required: true }, sections: { ...strings, required: true, description: '最终报告必须按顺序包含的二级章节标题。' },
+  } },
+} } as const
+const output = { schema: { type: 'json' } as const,
+  render: (_args: object, value: InferValue<{ type: 'json' }>) => [{ type: 'text' as const, text: JSON.stringify(value) }] }
+const json = (value: object) => z.json().parse(JSON.parse(JSON.stringify(value)))
+const reply = (task: ParentTask) => ({ task_id: task.id, report_id: task.report_id, phase: task.phase })
 
+/** 工具管线最终接受后，父任务服务才提交持久化事实和执行副作用。 */
 export function apply(ctx: Context): void {
   ctx.tools.presentAs('native')
   ctx.plugin(filesystemSkills, { providerName: 'hydrology-monitoring', includeDefaultRoots: false,
     customSkillDirs: [fileURLToPath(new URL('../../../skills/hydrology-monitoring/', import.meta.url))] })
   ctx.tools.register(defineTool({
-    name: 'get_hydrology_query_result',
-    description: '在收到查询子智能体完成通知后，读取其真实工具记录，返回全部查询表格、确定性统计和当前轮图表来源目录。只接受本会话直接创建的 hydrology-query 子会话；不重新取数。',
-    parameters: { subagent_id: { type: 'string', required: true, description: 'query_hydrology 返回的 subagentId。' } },
-    output: { schema: { ...chartResultSchema, properties: { ...chartResultSchema.properties,
-      outcome: { type: 'string', enum: ['success', 'no_data', 'error'], required: true },
-    } }, render: (args, value) => [{ type: 'text', text: `查询状态：${value.outcome}` }, ...renderChartResult(args, value)] },
+    name: 'query_hydrology', description: '提交一次完整水文业务计划。服务管理依赖、并发、查询重试及绘图；返回任务ID后等待集中就绪通知，不逐项派发或轮询。',
+    parameters: { plan }, output,
+    async execute(args, exec) { return json(reply(ctx.hydrologyParentTasks.submit(exec, args.plan))) },
+  }))
+  ctx.tools.register(defineTool({
+    name: 'get_hydrology_query_result', description: '按父任务ID读取真实查询结果、失败或无数据状态、图表ID及固定报告章节；不重新查询。',
+    parameters: { task_id: { ...string, required: true } }, output,
     async execute(args, exec) {
-      if (!exec.agent) throw new Error('结果读取需要活动主会话。')
-      const id = SessionId(args.subagent_id)
-      const children = await ctx.subagents.listChildren(exec.agent.id, exec.signal)
-      if (!children.some(child => child.id === id)) throw new Error('只能读取本会话直接创建的查询子智能体。')
-      using child = await ctx.sessionQuery.observeSession(id, { signal: exec.signal })
-      if (child.header.parentSession !== exec.agent.id || child.header.agentPreset !== 'hydrology-query') throw new Error('子会话归属或查询 preset 不匹配。')
-      const events = child.events.slice(Number(child.inheritedEventCount))
-      const lastEnd = events.findLast(event => event.type === 'turn/end')
-      const lastStart = events.findLast(event => event.type === 'turn/start')
-      if (!lastEnd || !lastStart || lastEnd.seq < lastStart.seq) throw new Error('查询子智能体仍在运行，请等待完成通知，不要轮询。')
-      if (lastEnd.type !== 'turn/end' || lastEnd.data.reason.kind !== 'completed') throw new Error('查询子智能体未正常完成，可能达到迭代上限、被取消或执行失败；不能使用其部分结果。')
-      const calls = new Set(events.filter(event => event.type === 'tool/call' && ['run_semantic_query', 'search_semantic_catalog'].includes(event.data.name)).map(event => event.type === 'tool/call' ? event.data.callId : ''))
-      let receipt: QueryReceipt | undefined
-      for (const event of events) {
-        if (event.type !== 'tool/result' || event.data.message.isError || !calls.has(event.data.message.toolCallId)) continue
-        const value = receiptFromMeta(event.data.meta)
-        if (!value?.terminal) continue
-        if (receipt) throw new Error('一个查询子智能体包含多个最终结果，拒绝混用。')
-        receipt = value
-      }
-      if (!receipt) throw new Error('子智能体没有提交新格式的结果引用，旧版本结果需要重新委派查询。')
-      const record: QueryRecord = receipt.result_ref
-        ? await ctx.hydrologyQueryResults.read(id, exec.agent.id, receipt.result_ref, exec.signal)
-        : { version: 1, outcome: 'error', terminal: true, query_goal: receipt.query_goal, row_count: 0, columns: [], rows: [], error: receipt.error }
-      if (record.outcome !== receipt.outcome || record.row_count !== receipt.row_count || record.query_goal !== receipt.query_goal) throw new Error('完整查询结果与回执不一致，请重新查询。')
-      const presented = presentQuery(record)
-      const value = record.outcome === 'success' && presented.datasets.length
-        ? withChartSource(presented.value, exec, ctx.chartSources, presented.datasets) : presented.value
-      return { ...value, outcome: record.outcome }
+      if (!exec.agent) throw new Error('读取任务需要活动主会话。')
+      const result = await ctx.hydrologyParentTasks.read(exec.agent, args.task_id, exec.signal)
+      if (result.phase === 'querying' || result.phase === 'charting') exec.concludeTurn()
+      return json(result)
     },
+  }))
+  ctx.tools.register(defineTool({
+    name: 'publish_hydrology_report', description: '提交完整Markdown报告。必须包含计划标题、全部二级章节及全部成功图表的独立段落引用。服务校验后发布固定ID的独立报告，普通助手回复不算发布。',
+    parameters: { task_id: { ...string, required: true }, markdown: { ...string, required: true } }, output,
+    async execute(args, exec) { return json(reply(ctx.hydrologyParentTasks.publish(exec, args.task_id, args.markdown))) },
+  }))
+  ctx.tools.register(defineTool({
+    name: 'cancel_hydrology_task', description: '仅在用户明确要求取消时终止未发布父任务及其在途查询。已发布报告不可取消或覆盖。',
+    parameters: { task_id: { ...string, required: true } }, output,
+    async execute(args, exec) { return json(reply(ctx.hydrologyParentTasks.cancel(exec, args.task_id))) },
   }))
 }

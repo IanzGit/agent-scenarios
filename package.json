@@ -28,7 +28,12 @@
       "default": "./lib/scenarios/hydrology-monitoring/results.js"
     },
     "./cordis.patch.yml": "./cordis.patch.yml",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./hydrology-monitoring/parent-tasks": {
+      "types": "./lib/scenarios/hydrology-monitoring/parent-tasks.d.ts",
+      "default": "./lib/scenarios/hydrology-monitoring/parent-tasks.js"
+    },
+    "./client": "./lib/client.js"
   },
   "files": [
     "lib/**/*.js",
@@ -40,6 +45,14 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "dsh-agent-charts",
+        "@deepseek-ai/dsh-client-ui-chat",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
     }
   },
   "engines": {
@@ -48,8 +61,8 @@
   },
   "scripts": {
     "start": "DSH_HOME=\"$PWD/.dsh\" node --env-file-if-exists=.env ../deepseek-harness/apps/cli/lib/bin.js web --patch \"$PWD/config/openai-compatible.patch.yml\" --no-open",
-    "build": "pnpm --filter dsh-agent-charts build && node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('lib', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
-    "typecheck": "pnpm --filter dsh-agent-charts build:host && pnpm --filter dsh-agent-charts typecheck && tsc --noEmit && tsc -p tests/browser/tsconfig.json",
+    "build": "pnpm --filter dsh-agent-charts build && node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('lib', { recursive: true, force: true })\" && tsc -p tsconfig.build.json && node esbuild.config.mjs",
+    "typecheck": "pnpm --filter dsh-agent-charts build:host && pnpm --filter dsh-agent-charts typecheck && tsc --noEmit && tsc -p tests/browser/tsconfig.json && tsc -p tsconfig.client.json",
     "test": "pnpm --filter dsh-agent-charts test && tsx --test tests/**/*.test.ts",
     "test:browser": "tsx --test tests/browser/*.browser.ts",
     "test:live": "node --env-file-if-exists=.env --import tsx/esm --test tests/integration/*.live.ts"
@@ -58,19 +71,23 @@
     "@deepseek-ai/cordis": "^4.0.5",
     "@deepseek-ai/dsh-agent": "0.2.1-rc.2",
     "@deepseek-ai/dsh-home-paths": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-llm": "0.2.1-rc.2",
     "@deepseek-ai/dsh-session": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-session-projection": "0.2.1-rc.2",
     "@deepseek-ai/dsh-session-query": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-subagent": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-subagent-spawn-in-process": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-tool-subagent": "0.2.1-rc.2",
     "@deepseek-ai/dsh-skill": "0.2.1-rc.2",
     "@deepseek-ai/dsh-skill-filesystem": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-subagent": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-subagent-spawn-in-process": "0.2.1-rc.2",
     "@deepseek-ai/dsh-system-prompt": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-tool-subagent": "0.2.1-rc.2",
     "@deepseek-ai/dsh-tools": "0.2.1-rc.2",
     "@deepseek-ai/schemastery": "^3.18.5"
   },
   "dependencies": {
-    "dsh-agent-charts": "workspace:*"
+    "dsh-agent-charts": "workspace:*",
+    "mdast-util-from-markdown": "^2.1.0",
+    "zod": "4.4.3"
   },
   "bundledDependencies": [
     "dsh-agent-charts"
@@ -82,6 +99,12 @@
     "@deepseek-ai/dsh-agent-loop": "link:../deepseek-harness/packages/core/agent-loop",
     "@deepseek-ai/dsh-agent-preset": "link:../deepseek-harness/packages/preset/agent-preset",
     "@deepseek-ai/dsh-agent-preset-registry": "link:../deepseek-harness/packages/preset/agent-preset-registry",
+    "@deepseek-ai/dsh-client-locale": "link:../deepseek-harness/packages/client/locale",
+    "@deepseek-ai/dsh-client-ui-chat": "link:../deepseek-harness/packages/client/ui-chat",
+    "@deepseek-ai/dsh-client-ui-conversation": "link:../deepseek-harness/packages/client/ui-conversation",
+    "@deepseek-ai/dsh-client-ui-primitives": "link:../deepseek-harness/packages/client/ui-primitives",
+    "@deepseek-ai/dsh-client-ui-renderer": "link:../deepseek-harness/packages/client/ui-renderer",
+    "@deepseek-ai/dsh-client-ui-slots": "link:../deepseek-harness/packages/client/ui-slots",
     "@deepseek-ai/dsh-fs-local": "link:../deepseek-harness/packages/fs/fs-local",
     "@deepseek-ai/dsh-home-paths": "link:../deepseek-harness/packages/util/home-paths",
     "@deepseek-ai/dsh-llm": "link:../deepseek-harness/packages/llm/llm",
@@ -95,17 +118,19 @@
     "@deepseek-ai/dsh-skill-filesystem": "link:../deepseek-harness/packages/skill/skill-filesystem",
     "@deepseek-ai/dsh-spill-local": "link:../deepseek-harness/packages/spill/spill-local",
     "@deepseek-ai/dsh-spill-policy": "link:../deepseek-harness/packages/spill/spill-policy",
-    "@deepseek-ai/dsh-system-prompt": "link:../deepseek-harness/packages/core/system-prompt",
     "@deepseek-ai/dsh-subagent": "link:../deepseek-harness/packages/subagent/subagent",
     "@deepseek-ai/dsh-subagent-spawn-in-process": "link:../deepseek-harness/packages/subagent/subagent-spawn-in-process",
-    "@deepseek-ai/dsh-tool-subagent": "link:../deepseek-harness/packages/subagent/tool-subagent",
+    "@deepseek-ai/dsh-system-prompt": "link:../deepseek-harness/packages/core/system-prompt",
     "@deepseek-ai/dsh-tool-skill": "link:../deepseek-harness/packages/skill/tool-skill",
+    "@deepseek-ai/dsh-tool-subagent": "link:../deepseek-harness/packages/subagent/tool-subagent",
     "@deepseek-ai/dsh-tools": "link:../deepseek-harness/packages/core/tools",
     "@deepseek-ai/dsh-working-directory": "link:../deepseek-harness/packages/session/working-directory",
     "@deepseek-ai/schemastery": "link:../deepseek-harness/vendor/schemastery",
     "@playwright/test": "1.64.1",
     "@types/node": "^22.20.0",
     "@types/react": "^18.3.31",
+    "esbuild": "0.28.2",
+    "react": "18.3.1",
     "tsx": "4.23.13",
     "typescript": "6.0.3",
     "yaml": "^2.4.2"

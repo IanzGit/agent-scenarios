@@ -39,6 +39,10 @@ async function client() {
   plugin.apply({
     uiConversation: { events: { register: () => undefined } },
     slots: {
+      registerFactory(spec: Omit<Entry, 'component'>, component: Entry['component']) {
+        entries.set(spec.name, { ...spec, component })
+        disposers.push(() => { entries.delete(spec.name) })
+      },
       inject(name: string, setup: () => Iterable<() => void> | (() => void)) {
         assert.ok(['tool.call.toolview', 'conversation.chat.response.body'].includes(name))
         const result = setup()

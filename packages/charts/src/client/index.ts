@@ -4,12 +4,15 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { ChartToolView, CHART_TOOL_NAMES } from './ChartToolView.tsx'
 import { ChartResponseBody } from './ChartResponseBody.tsx'
 import { chartDefinition } from './chart-data.ts'
+import { ReportBody } from './ReportBody.tsx'
 import styles from './styles.css'
+export type { ReportBodyInput } from './report-contract.ts'
 
 export const inject = ['slots', 'uiConversation']
 
 /** 五类工具共用一套卡片，注册及样式随插件卸载释放。 */
 export function apply(ctx: Context): void {
+  ctx.slots.registerFactory({ name: 'agent-scenarios.report.body', scope: 'session' }, ReportBody)
   ctx.uiConversation.events.register(chartDefinition)
   ctx.slots.inject('conversation.chat.response.body', () => ctx.slots.register({ name: 'conversation.chat.response.body' }, ChartResponseBody))
   ctx.slots.inject('tool.call.toolview', function* () {

@@ -11,7 +11,8 @@ agent-scenarios/
 ├── pnpm-workspace.yaml              # packages/* 工作区
 ├── config/                         # 可选模型网关配置
 ├── src/
-│   ├── index.ts                     # 保留水害插件根入口
+│   ├── index.ts                     # 保留水害根入口；clientOnly 用于全局 Client 加载
+│   ├── client/                      # 父任务状态与独立报告节点
 │   ├── shared/
 │   │   ├── result.ts               # 通用业务结果与完整 Markdown 表格
 │   │   └── chart-result.ts         # 图表输出协议、结果渲染与来源挂接
@@ -142,13 +143,13 @@ DSH_HOME="$PWD/.dsh" node --env-file-if-exists=.env ../deepseek-harness/apps/cli
 
 该正文插槽由同工作区 Harness 的 `ui-chat` 前端提供；未安装图表插件时继续使用原生 Markdown。旧会话的最终回答没有引用标记时，在最终正文末尾恢复本轮已保存的图表；有引用的回答按标记位置展示。查询、来源注册及后端生成协议保持不变。
 
-图表插件的三个入口职责固定：
+图表插件的公开入口职责：
 
 | 入口 | 职责 |
 | --- | --- |
-| `dsh-agent-charts` | 全局 Host 服务，导出 `ChartSources`、数据集类型和来源目录 schema；不注册模型工具 |
+| `dsh-agent-charts` | 全局 Host 服务，导出 `ChartSources`、数据集类型、来源目录 schema 和纯函数 `renderChart`；不注册模型工具 |
 | `dsh-agent-charts/tools` | 在调用者 preset 内注册五类图表工具 |
-| `dsh-agent-charts/client` | 标准浏览器入口，声明依赖 `dsh-client-ui-tool`，由 `dsh.client` 自动加载，与 Host 共用纯数据协议 |
+| `dsh-agent-charts/client` | 标准浏览器入口，声明依赖 `dsh-client-ui-tool`，由 `dsh.client` 自动加载；提供工具卡片、普通回复图表及独立报告正文 Factory |
 
 图表服务拥有全部来源缓存和会话监听；业务插件仅声明 `inject: ['tools', 'skills', 'systemPrompt', 'chartSources']`，使用 `ctx.chartSources.prepare(exec, datasets)` 返回目录。业务工具不管理图表服务的生命周期，通用表格模块也不依赖图表协议。
 
@@ -164,14 +165,40 @@ DSH_HOME="$PWD/.dsh" node --env-file-if-exists=.env ../deepseek-harness/apps/cli
 
 该场景参考原 `hydrology_semantic_query` 的业务口径，保留现有 Cube 语义服务，只迁移完整目录模式；不包含向量检索、原 Python 父智能体、报告子智能体或 LangGraph。宿主使用官方 profile 提供的 `subagent`、`subagent-spawn-in-process`、Session 持久化及 Session 查询服务，不重复注册这些全局服务。全局 Host 插件 `dsh-agent-scenarios/hydrology-monitoring/results` 提供唯一的 `hydrologyQueryResults` 文件服务，两个 preset 共享该服务，不各自配置不同结果目录。
 
-标准 `@deepseek-ai/dsh-tool-subagent` 注册为 `query_hydrology`，固定 `provider: spawn`、`agentPreset: hydrology-query`、`maxDepth: 1`。每个独立子会话使用自己的上下文和查询进度，默认继承主会话的模型；查询 preset 只允许目录和查询工具，不提供递归委派、skill 或图表工具。普通 Harness 会话依据 skill 拆分任务并展示结果，不新增自定义父智能体执行器。
+全局 Host 插件 `dsh-agent-scenarios/hydrology-monitoring/parent-tasks` 注册 `ctx.hydrologyParentTasks`。主智能体理解问题并提交结构化计划；服务固定业务任务ID、报告ID、查询ID与依赖，在后台通过官方 `ctx.subagents.startActivation` 执行，固定 `provider: spawn`、`agentPreset: hydrology-query`、`maxDepth: 1`、`delivery: caller`。查询 preset 只提供目录和查询工具，默认继承主会话模型。父任务服务统一收集全部查询、生成声明的图表，然后集中唤醒主智能体成文。水文主 preset 不再提供逐项委派或直接绘图工具。
 
 | 工具 | 参数与行为 |
 | --- | --- |
-| `query_hydrology` | 官方异步委派；`description / prompt`，立即返回 `subagentId`，完成后另行通知 |
+| `query_hydrology` | `{plan}`，提交完整计划并立即返回 `task_id / report_id / phase`；工具最终接受后才启动后台执行 |
+| `get_hydrology_query_result` | `{task_id}`，读取本父会话任务的真实查询结果、状态、图表ID和报告结构，不再次查询 Cube |
+| `publish_hydrology_report` | `{task_id, markdown}`，校验标题、完整章节和全部成功图表引用，通过后发布独立报告 |
+| `cancel_hydrology_task` | `{task_id}`，仅在用户要求时取消未发布任务并释放在途查询；不删除已保存结果 |
 | `search_semantic_catalog` | 子智能体工具；省略 `model_names` 读取公开模型摘要，指定名称读取完整成员和语义约束 |
 | `run_semantic_query` | 子智能体工具；`query_goal / semantic_query`，执行本地校验、Cube `/sql` 编译预检及 `/load` 查询 |
-| `get_hydrology_query_result` | 主会话工具；`subagent_id`，从直接子会话已提交的工具记录读取完整表格、确定性统计及当前轮图表来源，不再次查询 Cube |
+
+计划示例（主智能体根据实际问题和技能确定查询条件及章节）：
+
+```json
+{
+  "title": "主斜井水位关联分析",
+  "queries": [
+    {"id": "current", "prompt": "查询主斜井水位的当前值、单位和采集时间"},
+    {"id": "history", "prompt": "查询主斜井水位2025-09-01至2025-09-07的历史原始采样，保留单位和时间"}
+  ],
+  "charts": [
+    {"id": "history-line", "query_id": "history", "dataset": "history", "type": "line", "title": "历史水位", "x_field": "time", "value_field": "value", "series_field": "point"}
+  ],
+  "report": {"title": "主斜井水位关联分析", "sections": ["当前水位", "历史变化", "关联分析与异常点", "结论"]}
+}
+```
+
+每个查询的 `depends_on` 声明上游查询ID；可选 `inputs: [{query_id, columns}]` 从已校验的上游完整行集中绑定真实字段。依赖必须无环，查询和图表意图ID不能重复。依赖失败、无数据或缺少指定字段时跳过下游，独立查询继续执行。每个父会话最多一个未结束任务；同一用户请求重复提交同一计划复用原任务，不重复派发，改变计划需结束旧任务并发起新请求。
+
+状态按 `querying → charting → composing → published` 推进；取消为 `cancelled`，结果损坏或无法确认执行归属等需要处理的情况为 `blocked`。服务保证查询全部结束后绘图、图表全部收敛后成文、结构校验通过后发布。只有网络错误、超时、HTTP 5xx 和恢复时确认的中断允许自动重试，默认最多两次尝试；认证、业务参数、结果文件损坏等错误不会因此重新查询。
+
+`hydrology-parent-tasks` Host 条目可配置 `maxConcurrentQueries`（默认3）、`maxQueryAttempts`（默认2，含首次）、`retryDelayMs`（默认1000）。每次派发前持久化尝试及预留子会话ID；恢复时先核对真实子会话回执与完整结果，已提交结果直接复用，尚未创建的预留身份沿用原ID，确认中断才在剩余预算内新建尝试。仅在父 Agent 被恢复时续作，Host 启动不扫描或激活历史任务。
+
+任务状态使用官方 `appendPluginRecord` 写入版本1外部插件记录 `plugin:dsh-agent-scenarios/parent-task`，带 `ignorable: true`；Session 投影重放恢复状态，就绪消息先持久化再投递。它不是 Harness 内建正式事件，框架未来格式迁移对外部记录仅尽力保留，升级前应备份会话及结果目录。
 
 查询输入字段为 `query_mode / models / measures / dimensions / segments / filters / time_dimensions / order / limit / offset / ungrouped`。只执行明细查询，固定 `measures=[]`、`ungrouped=true`；View 返回完整 `default_projection`，Cube 限定同一连接组件内1至4个模型。过滤叶子严格使用 `member / operator / values`，`set/notSet` 不带 `values`，逻辑组只接受两层非空 `and/or`；不接受字段简写。`time_dimensions` 保留 `dimension / date_range`，不接受聚合粒度 `granularity`。原生校验失败提供具体过滤字段路径和示例；子智能体提示词要求只修错误字段，保留日期、对象、地点、排除条件及 AND/OR 关系。本次未增加结构化任务语义守卫，语法合法的错误业务范围仍需核对。语义目录提供模型、成员、规范过滤标识和业务约束；不接受原始 SQL。未要求 TopN、最新或分页时不设置行数上限，客户端不另行截断 Cube 返回的行集。
 
@@ -183,7 +210,11 @@ DSH_HOME="$PWD/.dsh" node --env-file-if-exists=.env ../deepseek-harness/apps/cli
 
 业务范围采用 Schema 和提示词约束，自由成文没有程序化事实校验；仍需核对测点去重数量及“无事件不等于运行正常”等结论，查询或绘图成功不代表报告全文正确。
 
-每轮最多委派三个独立任务，依赖任务先读取上游所需数据。只剩等待时结束响应，运行时通知完成；通知中的 closing message 可能是纠错前说明或没有正文，不能据此重复委派，查询状态以结果读取工具返回的 `outcome` 为准。全部取数完成后，在最终展示轮统一读取结果、调用图表并输出报告。提前为依赖读取的结果在展示轮重新读取；旧轮的 `source_id` 不能使用。图表继续使用既有工具、正文引用和版本1展示元数据，刷新回放不重新取数。
+主智能体收到 `hydrology-task-ready` 集中通知后，读取任务结果，按计划标题及二级章节生成整篇 Markdown，通过发布工具一次提交。每个成功图表在相应段落后独立一行引用 `[图表:真实chart_id]`，每个ID恰好一次；失败或无数据图表明确说明，不引用。普通回复及子智能体 closing message 不作为发布或重试依据。服务复用 `dsh-agent-charts` 的纯绘图实现，图表意图可指定实际数据集ID，或 `history / realtime` 族按真实类型及单位分别绘图。
+
+发布记录固定报告ID、完整正文和图表快照，Client 通过标准 Conversation Definition 渲染为独立报告节点，使用图表插件的 `agent-scenarios.report.body` Factory。报告不依赖 Turn 最后一条助手回复或当前轮图表缓存；后续完成通知、执行区折叠及刷新回放不会改变已发布报告的身份和正文。相同正文重复发布幂等，不同正文不能覆盖，修订需新的用户请求。工具执行状态留在执行区，不进入报告节点。
+
+`cordis.patch.yml` 的裸包条目 `agent-scenarios-client` 使用 `clientOnly: true` 加载业务 Client，避免全局注册水害工具。Harness 只从裸包 Host 条目发现 Client，领域子路径条目不足以加载前端。根入口未配置 `clientOnly` 时继续保留原水害插件行为，原水害 preset 与图表工具流程保持兼容。
 
 适配器按稳定语义成员识别类型、测点、数值、单位、时间和状态，包含测点部署 `view_point_deployment_analysis`：`point_types / point_names / value_statuses / device_statuses` 为按测点唯一标识去重的数量分布；`realtime_* / history_*` 分别为按监测类型和单位拆分的实时及历史数据集。饼图使用 `category / count`；实时散点和柱状图使用 `point / value`；折线图使用 `time / value`，可按 `point` 分系列。历史保留重复时间、空值和原精度，统计仅使用有限数值。测点定义分布明细和可绘图的历史采样明细复用现有 `chartOnly` 标记，完整保留在结构化表格和图表来源中，模型文本展示分布/指标统计与图表目录，避免多项原始明细表耗尽上下文。事件明细继续完整展示，只依据实际起止时间计算已结束时长，结束时间为空标记“未结束”。
 
@@ -196,7 +227,7 @@ DSH_HOME="$PWD/.dsh" node --env-file-if-exists=.env ../deepseek-harness/apps/cli
 | `hydrology-single-point-recent` | 同一点位实时、历史、事件，共3项 | 当前、历史、事件、总结；实时表、折线图及事件表 |
 | `hydrology-daily-report` | 当天液位、水流量、温度历史及事件，共4项 | 日期范围、指标统计、事件、关注点；统计表及事件表，用户要求时展示日内曲线 |
 
-六个技能逐项要求调用查询子智能体，保留原完整测点名称、工作面范围与排除“麦垛山煤矿总排水日累计水流量”的适用规则。默认历史窗口沿用原技能：综合/指标/单点为2025年9月前7天，工作面为2025年9月，日报为2025年9月15日 `[00:00, 次日00:00)`；事件时间仅按相应技能已声明的口径处理。用户明确日期优先。无记录、字段缺失和查询失败分别说明，失败不等同于无事件，无事件不代表运行正常。
+六个技能要求将各查询项一次性纳入计划，保留原完整测点名称、工作面范围与排除“麦垛山煤矿总排水日累计水流量”的适用规则。默认历史窗口沿用原技能：综合/指标/单点为2025年9月前7天，工作面为2025年9月，日报为2025年9月15日 `[00:00, 次日00:00)`；事件时间仅按相应技能已声明的口径处理。用户明确日期优先。无记录、字段缺失和查询失败分别说明，失败不等同于无事件，无事件不代表运行正常。
 
 | 环境变量（前缀 `HYDROLOGY_SEMANTIC_QUERY_`） | 默认值 |
 | --- | --- |
@@ -210,7 +241,7 @@ DSH_HOME="$PWD/.dsh" node --env-file-if-exists=.env ../deepseek-harness/apps/cli
 
 显式查询子智能体插件配置优先于环境变量，字段为对应 camelCase，例如 `cubeUrl`、`cubeToken` 和 `maxAgentIterations`。结果目录只在全局 `hydrology-query-results` Host 条目配置 `resultsDirectory`，该值优先于 `HYDROLOGY_SEMANTIC_QUERY_RESULTS_DIRECTORY`；相对目录在 Host 启动时解析为绝对路径。修改结果目录时需同步迁移已保存的目录结构，否则已有新格式回执将无法读取。修改既有安装的 preset 组合后，重新执行本文的官方 `plugin --profile web add .` 安装命令并重启 `pnpm start`，在新会话选择新增场景。现有会话继续使用其原 preset。
 
-水文监测测试使用本地 Cube fixture 和固定模型响应，验证查询约束、失败分类、原生 spawn、跨会话拒绝、结果持久化及图表来源，覆盖193行、77行和万行结果在真实12500-token spill 策略下的完整读取、新服务实例读取、文件损坏/缺失、写入失败和取消清理；参数纠错回放核对最终 Cube 请求保留日期、AND及排除条件。浏览器测试同时验证原水害场景和新场景的正文图表、交互与刷新回放。运行 `pnpm test / typecheck / build / test:browser`，不需要业务接口或模型密钥。
+水文监测测试使用本地 Cube fixture 和固定模型响应，验证查询约束、失败分类、官方 caller 激活、跨会话拒绝、结果持久化、重复计划幂等、并发限制、依赖跳过、重试预算、取消、提前发布拒绝及中断恢复，覆盖193行、77行和万行结果在真实12500-token spill 策略下的完整读取、新服务实例读取、文件损坏/缺失、写入失败和取消清理；参数纠错回放核对最终 Cube 请求保留日期、AND及排除条件，并检查实际主会话模型请求包含完整成文规则。浏览器测试同时验证原水害场景和新场景的正文图表、交互与刷新回放，并在报告发布后注入晚到的子会话通知，验证执行区折叠与刷新后报告ID、标题、图表前后章节仍保持完整，正文内没有工具分组状态。运行 `pnpm test / typecheck / build / test:browser`，不需要业务接口或模型密钥。
 
 ### 添加其他领域
 
@@ -234,6 +265,6 @@ pnpm exec playwright install chromium
 pnpm test:browser
 ```
 
-保留业务工具名、参数、技能名、环境变量和默认参考日期。本次结构重构保持图表工具名称、参数、来源目录及 `agentScenariosChart` 版本1协议，原有新图表会话仍可回放。旧 `meta.waterHazard` 图表不转换，缺少新元数据的历史记录继续显示原有文本和表格。仅生成图表所需的数据进入持久展示载荷，业务原始 `series` 不另存一份。
+水害工具、图表工具、技能名、环境变量和默认参考日期保持兼容。水文主会话的 `query_hydrology / get_hydrology_query_result` 已切换为父任务协议，不兼容旧逐子会话参数；已生成的普通历史回复不自动转换为独立报告。图表继续保持工具名称、参数、来源目录及 `agentScenariosChart` 版本1协议，原有新图表会话仍可回放。旧 `meta.waterHazard` 图表不转换，缺少新元数据的历史记录继续显示原有文本和表格。仅生成图表所需的数据进入持久展示载荷，业务原始 `series` 不另存一份。
 
 已移除 `pnpm start:web / test:web / smoke:api`；安装启动改用官方 CLI，真实接口检查统一为 `test:live`。旧版针对全局 `coal-mine-scenarios` 的配置应移到水害 preset 内的 `water-hazard-tools` 条目。已有 `.env`、`.dsh` 和 `temp/new.md` 保留，Harness 源码不变。

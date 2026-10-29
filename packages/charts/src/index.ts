@@ -3,6 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { ChartSources } from './service.ts'
 
 export { ChartSources }
+export { renderChart } from './render.ts'
 export { chartSourceSchema, renderChartSource } from './schemas.ts'
 export type { ChartColumn, ChartDataset, ChartOption, ChartResult, ChartRow, ChartSelection, ChartSource, ChartType } from './types.ts'
 

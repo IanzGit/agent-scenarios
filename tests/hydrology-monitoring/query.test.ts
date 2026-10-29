@@ -160,7 +160,7 @@ test('无数据、认证、坏响应、Continue wait 耗尽、超时和取消保
   assert.throws(() => resolveSettings({ timezone: 'not-a-timezone' }))
 })
 
-test('六个标准 skill 保留业务日期、完整查询步骤及逐项委派和图表要求', async () => {
+test('六个标准 skill 保留业务日期和查询步骤，统一提交父任务并发布报告', async () => {
   const root = new URL('../../skills/hydrology-monitoring/', import.meta.url)
   const names = await readdir(root)
   assert.equal(names.length, 6)
@@ -169,13 +169,14 @@ test('六个标准 skill 保留业务日期、完整查询步骤及逐项委派�
     const frontmatter = parse(content.split('---')[1]) as { name: string; description: string }
     assert.equal(frontmatter.name, name)
     assert.ok(frontmatter.description)
-    assert.match(content, /每项必须调用 query_hydrology/)
-    assert.match(content, /最终展示轮/)
+    assert.match(content, /query_hydrology\(\{plan\}\)/)
+    assert.match(content, /publish_hydrology_report/)
+    assert.match(content, /hydrology-task-ready/)
     assert.match(content, /\[图表:真实chart_id\]/)
     const taskRows = content.split('## 查询步骤与业务口径')[1].split('## 报告分析')[0].split('\n').filter(line => /^\| \d/.test(line))
     const expected = name === 'mine-hydrology-analysis' || name === 'workface-hydrology-analysis' ? 6 : name === 'hydrology-mine-realtime-overview' || name === 'hydrology-single-point-recent' ? 3 : 4
     assert.equal(taskRows.length, expected)
-    assert.ok(taskRows.every(line => line.split('|').length === 5 && line.includes('query_hydrology → get_hydrology_query_result')))
+    assert.ok(taskRows.every(line => line.split('|').length === 5 && line.includes('plan.queries 中一个查询')))
     if (name !== 'hydrology-mine-realtime-overview') assert.match(content, /2025 年 9 月/)
   }
 })

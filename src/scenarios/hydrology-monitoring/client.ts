@@ -67,7 +67,7 @@ export class CubeClient {
         const detail = response.status === 400 ? this.safeMessage(await response.text()) : ''
         if (response.status !== 400) await response.body?.cancel()
         throw new QueryError(response.status === 401 || response.status === 403 ? 'Cube 认证失败。' : `Cube HTTP ${response.status}：${detail}`,
-          response.status === 401 || response.status === 403 ? 'cube_auth_error' : 'cube_http_error', path, response.status === 400)
+          response.status === 401 || response.status === 403 ? 'cube_auth_error' : response.status >= 500 ? 'cube_server_error' : 'cube_http_error', path, response.status === 400)
       }
       let payload: unknown
       try { payload = await response.json() } catch (error) {

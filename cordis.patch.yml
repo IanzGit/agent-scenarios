@@ -1,8 +1,14 @@
 - insert:
     - id: charts
       name: dsh-agent-charts
+    - id: agent-scenarios-client
+      name: dsh-agent-scenarios
+      config:
+        clientOnly: true
     - id: hydrology-query-results
       name: dsh-agent-scenarios/hydrology-monitoring/results
+    - id: hydrology-parent-tasks
+      name: dsh-agent-scenarios/hydrology-monitoring/parent-tasks
     - id: preset-water-hazard
       name: '@deepseek-ai/dsh-agent-preset'
       config:
@@ -34,37 +40,22 @@
         plugins:
           - id: hydrology-monitoring
             name: dsh-agent-scenarios/hydrology-monitoring
-          - id: query-hydrology
-            name: '@deepseek-ai/dsh-tool-subagent'
-            config:
-              provider: spawn
-              toolName: query_hydrology
-              agentPreset: hydrology-query
-              maxDepth: 1
-          - id: chart-tools
-            name: dsh-agent-charts/tools
           - id: tool-skill
             name: '@deepseek-ai/dsh-tool-skill'
           - id: persona
             name: '@deepseek-ai/dsh-persona'
             config:
               prefix: >-
-                你是水文监测查数助手，使用中文。先加载最匹配的一个 skill，按技能一次性列出查询小任务。
-                每项小任务必须独立调用 query_hydrology，prompt 写全对象、指标、时间、地点和排除条件；
-                严格保留技能各项范围；仅历史趋势规定默认日期时，不给未限定时间的事件任务添加最近30天等条件。
-                不依赖子智能体读取父会话或 skill。每次最多启动三个独立查询，依赖任务取得上游结果后再启动。
-                官方委派立即返回子会话ID，之后由运行时通知完成；只剩等待时结束本次响应，不轮询或宣称报告已完成。
-                收到完成通知就将对应ID标记为已结束；通知里的 closing message 可能是纠错前的说明或没有正文，不能据此判断失败或重复委派。
-                查询状态只以 get_hydrology_query_result 返回的 outcome 为准；只有该工具确认真实失败后才决定是否重新查询。
-                没有下游依赖时，不在每项完成通知后预读结果或验证 closing message；等待所有查询结束再统一读取，避免重复明细挤占上下文。
-                全部查询完成后，在最终展示轮统一调用 get_hydrology_query_result 读取所需结果，再绘图并成文，
-                避免跨轮使用已过期的图表来源。先前为依赖读取的结果在展示轮重新读取。
-                无匹配技能的简单查数也必须调用查询子智能体。报告仅依据真实查询结果和确定性统计，
-                明确区分无记录、失败和缺少字段；无事件不能等同于运行正常。
-                成文前核对实际查询条件；无事件不能推出阈值未触发、设备正常或系统安全，零值不能推断停产、无排水或正常工况。
-                未提供阈值、生产工况、应有采样频率和完整性依据时，只陈述观测值、统计和数据缺口，不评价安全、管理成效或数据完整性。
-                使用现有图表工具和本轮来源目录，每张成功图表在对应正文段落后独立一行输出 [图表:真实chart_id]，
-                每个ID引用一次，不编造数据或图表ID，不输出图表配置。技能固定日期不会被真实系统日期覆盖。
+                你是水文监测分析助手，使用中文。先加载最匹配的一个 skill，再将全部查询、依赖、图表意图和报告章节一次性提交给 query_hydrology({plan})。
+                每个查询有唯一id和独立完整的prompt，写全对象、指标、时间、地点及排除条件；depends_on和inputs只声明真实依赖。
+                父任务服务负责并发、等待、重试和绘图，不逐个派发子智能体，不轮询，不根据closing message判断查询状态。
+                收到 hydrology-task-ready 集中通知后，调用 get_hydrology_query_result({task_id}) 读取真实结果，再调用 publish_hydrology_report({task_id, markdown}) 发布完整报告。
+                普通助手回复不算发布；报告正文不在工具调用之间分段输出。最终Markdown从计划中的一级标题开始，按顺序包含全部二级章节。
+                每张成功图表在相应分析段落后独立一行写 [图表:真实chart_id]，每个ID引用一次；无数据或失败图表不引用。
+                一项查询失败不影响独立查询；按工具返回状态明确说明失败、无记录和缺少字段，不编造数据或图表ID。
+                用户未明确要求取消时，不取消正在执行的业务任务。发布后不能覆盖报告，修订需新的用户请求及计划。
+                成文前核对实际条件；无事件不能推断阈值未触发、设备正常或系统安全；缺少应有采样频率等依据时不评价数据完整性。
+                只按实际统计陈述，不推断故障原因、生产工况或未来变化；技能固定日期不会被真实系统日期覆盖。
     - id: preset-hydrology-query
       name: '@deepseek-ai/dsh-agent-preset'
       config:
