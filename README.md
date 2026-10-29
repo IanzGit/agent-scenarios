@@ -1,53 +1,33 @@
 # 煤矿场景工具与技能插件
 
-`dsh-agent-scenarios` 是一个标准的 DeepSeek Harness 插件包。每个业务领域使用独立的源码目录、技能目录和 preset；提供水害领域的五个查询工具、两个技能，以及水文监测查数领域的 TS 查询子智能体和六个技能。业务代码全部为 TypeScript；通用图表由独立的标准 Host＋Client 插件 `dsh-agent-charts` 提供，不依赖原 Python 服务。
+`dsh-agent-scenarios` 是一个 DeepSeek Harness Bundle 和轻量 pnpm Monorepo。每个业务领域使用独立的包、技能目录和 preset；提供水害领域的五个查询工具、两个技能，以及水文监测查数领域的 TS 查询子智能体和六个技能。业务代码全部为 TypeScript；通用图表由独立的标准 Host＋Client 插件 `dsh-agent-charts` 提供，不依赖原 Python 服务。
 
 ## 目录与职责
 
 ```text
 agent-scenarios/
-├── package.json                     # 业务包入口、领域子入口及 bundle
-├── cordis.patch.yml                 # 公共图表服务与领域 preset 组合
-├── pnpm-workspace.yaml              # packages/* 工作区
-├── config/                         # 可选模型网关配置
-├── src/
-│   ├── index.ts                     # 保留水害根入口；clientOnly 用于全局 Client 加载
-│   ├── client/                      # 父任务状态与独立报告节点
-│   ├── shared/
-│   │   ├── result.ts               # 通用业务结果与完整 Markdown 表格
-│   │   └── chart-result.ts         # 图表输出协议、结果渲染与来源挂接
-│   └── scenarios/water-hazard/
-│       ├── index.ts                 # 业务插件注册
-│       ├── api.ts / config.ts       # 接口与部署配置
-│       ├── tools.ts                 # 五个业务查询工具定义与调用编排
-│       └── services/                # 设备、报警、统计和趋势取数、计算与数据集适配
-├── skills/<领域>/                   # 工具选择、图表要求和报告规则
-├── packages/charts/                 # dsh-agent-charts 标准插件
-│   ├── package.json                 # . / tools / types / client 公开入口
-│   ├── src/
-│   │   ├── index.ts                 # Host 入口，注册 ctx.chartSources
-│   │   ├── service.ts               # 来源授权、轮次隔离及资源释放
-│   │   ├── types.ts / schemas.ts    # 场景无关的图表协议
-│   │   ├── tools/
-│   │   │   ├── index.ts             # preset 内的工具插件入口
-│   │   │   ├── common.ts            # 公共参数、输出及数据处理
-│   │   │   └── line.ts / bar.ts / pie.ts / stacked-bar.ts / scatter.ts
-│   │   └── client/
-│   │       ├── index.ts             # 客户端注册
-│   │       ├── Charts.tsx           # 交互图表及 ECharts 实例
-│   │       ├── ChartToolView.tsx    # 五类工具共用的状态与摘要卡片
-│   │       ├── ChartResponseBody.tsx # 正文图表引用及历史回放
-│   │       ├── chart-data.ts / chart-references.ts # 本轮元数据投影与引用解析
-│   │       ├── chart-meta.ts        # 持久化图表元数据解析
-│   │       └── styles.css           # 展示样式
-│   ├── tests/                       # 图表及服务生命周期测试
-│   └── esbuild.config.mjs           # 浏览器 factory 构建
-└── tests/                           # 业务、插件集成和浏览器测试
+├── packages/
+│   ├── water-hazard/                # 水害插件：源码、两个技能、领域测试
+│   ├── hydrology-monitoring/        # 水文插件：查询子智能体、六个技能、报告 Client、测试
+│   ├── charts/                      # 通用 Host + Client 图表插件
+│   └── shared/                      # 公共结果契约与纯表格渲染
+├── presets/                         # 水害、水文主智能体、水文查询 preset
+├── config/                          # 可选模型网关配置
+├── tests/
+│   ├── integration/                 # 跨插件调用链、Bundle 与模型网关验证
+│   ├── browser/                     # Web 交互和刷新回放
+│   └── fixtures/                    # 共用业务接口与录制模型
+├── docs/architecture.md             # 分层、公开入口与旧配置迁移
+├── cordis.patch.yml                 # 全局图表、水文服务及默认设置
+├── package.json                     # Bundle 补丁列表与工作区开发命令
+└── pnpm-workspace.yaml
 ```
 
-`src/scenarios/<领域>/index.ts` 是该领域的插件入口，只做配置解析和注册。`tools.ts` 负责工具定义、输出配置及业务调用编排；图表输出协议、结果渲染与来源挂接统一由 `shared/chart-result.ts` 提供。`services/` 负责取数、确定性计算及对应业务的数据集适配；适配函数与业务函数放在同一文件，业务函数不依赖工具执行上下文。`skills/` 负责工具选择、调用顺序、报告章节及异常说明。
+根包 `dsh-agent-scenarios` 只负责 Bundle 装配，不再导出 Host、业务子入口或 Client。`dsh.bundle.patch` 按顺序加载根补丁和三个 preset 文件；业务工具和技能仅在对应 preset 内注册。详细分层与入口迁移见 [架构说明](docs/architecture.md)。
 
-业务包单向依赖图表插件的公开入口；图表插件不导入任何业务场景。业务工具、图表工具、技能和参考日期提示均注册在 `water-hazard` preset 内；图表服务通过裸包名全局加载，只有场景显式提交的成功查询才成为可绘图来源。公共目录只保留业务结果、表格与图表输出适配，没有额外路由、动态发现或场景注册框架。
+水害保留设备、预警、趋势三个 `services` 文件，工具定义、API 和图表输出适配分别放入 `tools`、`infrastructure`、`presentation`。水文按工具、查询子智能体、应用编排、领域协议、基础设施和展示适配组织，业务 Client 随水文包构建。每个业务包的 `skills` 负责工具选择、调用顺序、口径和报告规则。
+
+两个业务包通过公开入口依赖 `dsh-agent-shared` 和 `dsh-agent-charts`，互不依赖。shared 仅保留实际复用的结果契约与纯函数；依赖工具执行上下文的水害图表适配留在水害包内。图表插件不导入业务代码。
 
 ## 构建与安装
 
@@ -61,7 +41,7 @@ pnpm test
 pnpm build
 ```
 
-`pnpm build` 先构建图表插件的 Host、声明文件与 Client，再编译业务包。两个包各自拥有依赖及 `lib/` 产物；`pnpm typecheck` 先准备图表包的公开声明，再分别检查 Host、Client、业务和浏览器测试。图表插件使用 esbuild 生成标准的 Harness lazy-CJS factory，不依赖 Harness 内部构建脚本。通过 workspace 依赖开发，通过 `bundledDependencies` 随业务包发布；`pnpm pack` 包含完整图表插件。
+`pnpm build` 按 workspace 依赖顺序构建 shared、charts 和两个业务包，各包拥有自己的依赖和 `lib/` 产物。`pnpm typecheck` 先准备公开 Host 声明，再检查各包、集成测试和浏览器测试；`pnpm test` 先准备 Host 产物，再运行各包测试和根部集成测试。水文和图表 Client 各自使用 esbuild 生成标准 Harness lazy-CJS factory，不依赖 Harness 内部构建脚本。根 Bundle 通过 `bundledDependencies` 携带四个 workspace 包，`pnpm pack` 同时包含业务技能和全部补丁。单包命令示例：`pnpm --filter dsh-agent-water-hazard test`；首次运行单包测试前先完成根部 `pnpm typecheck`，以准备依赖包产物。
 
 有已安装的 `dsh` 时，使用官方命令安装到 Web profile：
 
@@ -161,11 +141,11 @@ DSH_HOME="$PWD/.dsh" node --env-file-if-exists=.env ../deepseek-harness/apps/cli
 
 ### 水文监测查数
 
-新会话继续默认使用 `water-hazard`。在 preset 菜单选择“水文监测查数”（`hydrology-monitoring`），可查询监测点、实时状态、历史趋势和预警报警。“水文查询子智能体”（`hydrology-query`）用于单任务委派。场景入口为 `dsh-agent-scenarios/hydrology-monitoring`，子智能体插件入口为 `dsh-agent-scenarios/hydrology-monitoring/query-child`，源码位于 `src/scenarios/hydrology-monitoring/`，技能位于 `skills/hydrology-monitoring/`。
+新会话继续默认使用 `water-hazard`。在 preset 菜单选择“水文监测查数”（`hydrology-monitoring`），可查询监测点、实时状态、历史趋势和预警报警。“水文查询子智能体”（`hydrology-query`）用于单任务委派。场景入口为 `dsh-agent-hydrology-monitoring/tools`，子智能体插件入口为 `dsh-agent-hydrology-monitoring/query-child`，源码位于 `packages/hydrology-monitoring/src/`，技能位于 `packages/hydrology-monitoring/skills/`。
 
-该场景参考原 `hydrology_semantic_query` 的业务口径，保留现有 Cube 语义服务，只迁移完整目录模式；不包含向量检索、原 Python 父智能体、报告子智能体或 LangGraph。宿主使用官方 profile 提供的 `subagent`、`subagent-spawn-in-process`、Session 持久化及 Session 查询服务，不重复注册这些全局服务。全局 Host 插件 `dsh-agent-scenarios/hydrology-monitoring/results` 提供唯一的 `hydrologyQueryResults` 文件服务，两个 preset 共享该服务，不各自配置不同结果目录。
+该场景参考原 `hydrology_semantic_query` 的业务口径，保留现有 Cube 语义服务，只迁移完整目录模式；不包含向量检索、原 Python 父智能体、报告子智能体或 LangGraph。宿主使用官方 profile 提供的 `subagent`、`subagent-spawn-in-process`、Session 持久化及 Session 查询服务，不重复注册这些全局服务。全局 Host 插件 `dsh-agent-hydrology-monitoring/results` 提供唯一的 `hydrologyQueryResults` 文件服务，两个 preset 共享该服务，不各自配置不同结果目录。
 
-全局 Host 插件 `dsh-agent-scenarios/hydrology-monitoring/parent-tasks` 注册 `ctx.hydrologyParentTasks`。主智能体理解问题并提交结构化计划；服务固定业务任务ID、报告ID、查询ID与依赖，在后台通过官方 `ctx.subagents.startActivation` 执行，固定 `provider: spawn`、`agentPreset: hydrology-query`、`maxDepth: 1`、`delivery: caller`。查询 preset 只提供目录和查询工具，默认继承主会话模型。父任务服务统一收集全部查询、生成声明的图表，然后集中唤醒主智能体成文。水文主 preset 不再提供逐项委派或直接绘图工具。
+全局 Host 插件 `dsh-agent-hydrology-monitoring` 注册 `ctx.hydrologyParentTasks`。主智能体理解问题并提交结构化计划；服务固定业务任务ID、报告ID、查询ID与依赖，在后台通过官方 `ctx.subagents.startActivation` 执行，固定 `provider: spawn`、`agentPreset: hydrology-query`、`maxDepth: 1`、`delivery: caller`。查询 preset 只提供目录和查询工具，默认继承主会话模型。父任务服务统一收集全部查询、生成声明的图表，然后集中唤醒主智能体成文。水文主 preset 不再提供逐项委派或直接绘图工具。
 
 | 工具 | 参数与行为 |
 | --- | --- |
@@ -214,7 +194,7 @@ DSH_HOME="$PWD/.dsh" node --env-file-if-exists=.env ../deepseek-harness/apps/cli
 
 发布记录固定报告ID、完整正文和图表快照，Client 通过标准 Conversation Definition 渲染为独立报告节点，使用图表插件的 `agent-scenarios.report.body` Factory。报告不依赖 Turn 最后一条助手回复或当前轮图表缓存；后续完成通知、执行区折叠及刷新回放不会改变已发布报告的身份和正文。相同正文重复发布幂等，不同正文不能覆盖，修订需新的用户请求。工具执行状态留在执行区，不进入报告节点。
 
-`cordis.patch.yml` 的裸包条目 `agent-scenarios-client` 使用 `clientOnly: true` 加载业务 Client，避免全局注册水害工具。Harness 只从裸包 Host 条目发现 Client，领域子路径条目不足以加载前端。根入口未配置 `clientOnly` 时继续保留原水害插件行为，原水害 preset 与图表工具流程保持兼容。
+`cordis.patch.yml` 的 `hydrology-parent-tasks` 条目通过裸包 `dsh-agent-hydrology-monitoring` 注册父任务服务，并使 Harness 发现该包的标准 Client。主智能体工具使用 `/tools` 子入口，仅在水文主 preset 中注册。原根包 Client 条目和 `clientOnly` 配置已移除。图表和水文的 Client 声明分别属于各自包，根 Bundle 不再承担前端职责。
 
 适配器按稳定语义成员识别类型、测点、数值、单位、时间和状态，包含测点部署 `view_point_deployment_analysis`：`point_types / point_names / value_statuses / device_statuses` 为按测点唯一标识去重的数量分布；`realtime_* / history_*` 分别为按监测类型和单位拆分的实时及历史数据集。饼图使用 `category / count`；实时散点和柱状图使用 `point / value`；折线图使用 `time / value`，可按 `point` 分系列。历史保留重复时间、空值和原精度，统计仅使用有限数值。测点定义分布明细和可绘图的历史采样明细复用现有 `chartOnly` 标记，完整保留在结构化表格和图表来源中，模型文本展示分布/指标统计与图表目录，避免多项原始明细表耗尽上下文。事件明细继续完整展示，只依据实际起止时间计算已结束时长，结束时间为空标记“未结束”。
 
@@ -245,15 +225,15 @@ DSH_HOME="$PWD/.dsh" node --env-file-if-exists=.env ../deepseek-harness/apps/cli
 
 ### 添加其他领域
 
-1. 在 `src/scenarios/<领域>/` 增加插件入口、配置、工具与业务模块。
-2. 在 `skills/<领域>/` 增加标准 `SKILL.md`，由该领域插件注册该目录。
-3. 在 `package.json` 增加领域子入口，在 `cordis.patch.yml` 增加 preset，将业务插件、persona 和技能加载工具放入该 preset。
-4. 需要图表时在该 preset 加载 `dsh-agent-charts/tools`；在对应的业务服务文件中将查询结果适配为 `ChartDataset[]`，在工具定义中复用 `shared/chart-result.ts` 的输出协议与渲染函数，并通过 `withChartSource` 发布来源目录。在 skill 中指定数据集和图表工具的对应关系。
-5. 新增该领域的业务及隔离测试。无需修改公共图表插件、Client 或其他场景；通用表格继续复用 `shared/result.ts`。
+1. 在 `packages/<领域>/` 增加独立 manifest、源码、技能、领域测试及构建配置；按现有复杂度分层。
+2. 通过公开入口依赖 `dsh-agent-shared` 的结果契约和所需的图表能力，不跨包导入生产源码。
+3. 在 `presets/` 增加组合补丁，将业务插件、persona 和技能加载工具放入该 preset，并加入根 manifest 的有序补丁列表。
+4. 在根 Bundle 的 dependencies 和 bundledDependencies 中加入业务包，并在 peerDependencies 汇总其宿主依赖；需要图表时按实际查询结果适配 `ChartDataset[]`，在技能中规定数据集与图表调用关系。
+5. 增加领域测试，并扩展 preset 隔离和必要的跨插件集成验证。拥有 Client 的包须通过裸包 Host 条目加载。
 
 ## 验证与迁移说明
 
-`pnpm test` 先运行图表插件自身测试，再验证业务口径、完整表格、数据集适配、完整 Harness 调用链，以及两个场景共享服务时的来源隔离和独立卸载。模型网关测试通过真实适配器检查关闭思考的请求参数及报告正文，不需要密钥或浏览器。
+`pnpm test` 运行各包自身测试，再通过集成测试验证业务口径、完整表格、数据集适配、完整 Harness 调用链，以及两个场景共享服务时的来源隔离和独立卸载。模型网关测试通过真实适配器检查关闭思考的请求参数及报告正文，不需要密钥或浏览器。
 
 ```bash
 # 可选：读取 .env 后查询真实水文系统，不调用模型
@@ -268,3 +248,5 @@ pnpm test:browser
 水害工具、图表工具、技能名、环境变量和默认参考日期保持兼容。水文主会话的 `query_hydrology / get_hydrology_query_result` 已切换为父任务协议，不兼容旧逐子会话参数；已生成的普通历史回复不自动转换为独立报告。图表继续保持工具名称、参数、来源目录及 `agentScenariosChart` 版本1协议，原有新图表会话仍可回放。旧 `meta.waterHazard` 图表不转换，缺少新元数据的历史记录继续显示原有文本和表格。仅生成图表所需的数据进入持久展示载荷，业务原始 `series` 不另存一份。
 
 已移除 `pnpm start:web / test:web / smoke:api`；安装启动改用官方 CLI，真实接口检查统一为 `test:live`。旧版针对全局 `coal-mine-scenarios` 的配置应移到水害 preset 内的 `water-hazard-tools` 条目。已有 `.env`、`.dsh` 和 `temp/new.md` 保留，Harness 源码不变。
+
+本次目录重构移除了旧业务入口，已有安装需按 [入口迁移说明](docs/architecture.md#入口迁移) 重新安装 Bundle 并重启；preset ID、工具参数、技能内容及历史记录格式保持原样。

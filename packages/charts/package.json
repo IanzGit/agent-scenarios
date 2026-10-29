@@ -63,11 +63,13 @@
     "@deepseek-ai/dsh-client-ui-chat": "link:../../../deepseek-harness/packages/client/ui-chat",
     "@deepseek-ai/dsh-client-ui-conversation": "link:../../../deepseek-harness/packages/client/ui-conversation",
     "@deepseek-ai/dsh-client-ui-slots": "link:../../../deepseek-harness/packages/client/ui-slots",
-    "@deepseek-ai/dsh-client-ui-primitives": "link:../../../deepseek-harness/packages/client/ui-primitives"
+    "@deepseek-ai/dsh-client-ui-primitives": "link:../../../deepseek-harness/packages/client/ui-primitives",
+    "@types/node": "^22.20.0",
+    "@types/react": "^18.3.31"
   },
   "scripts": {
-    "build:host": "tsc -p tsconfig.build.json",
-    "build": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('lib', { recursive: true, force: true })\" && pnpm build:host && tsc -p tsconfig.client.build.json && node esbuild.config.mjs",
+    "build:host": "tsc -p tsconfig.build.json && tsc -p tsconfig.client.build.json",
+    "build": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('lib', { recursive: true, force: true })\" && pnpm build:host && node esbuild.config.mjs",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.client.json",
     "test": "node esbuild.config.mjs && tsx --test tests/*.test.ts"
   }

@@ -15,6 +15,7 @@ import { recordings, recordedArgs, recordedText } from '../fixtures/recorded-mod
 import { startFixtureServer } from '../fixtures/server.ts'
 import { startCubeFixture } from '../fixtures/hydrology.ts'
 import { hydrologyStep } from '../fixtures/hydrology-model.ts'
+import { readBundlePatches } from '../fixtures/bundle.ts'
 
 test('Harness Web 在最终正文段落内展示图表，执行区折叠后仍可交互和刷新回放', { timeout: 180000 }, async () => {
   const root = fileURLToPath(new URL('../../', import.meta.url))
@@ -75,10 +76,11 @@ test('Harness Web 在最终正文段落内展示图表，执行区折叠后仍�
       { id: 'webserver', config: { host: '127.0.0.1', port: 0 } },
       { id: 'workspace-controller', config: { documentsDirectory: join(temp, 'Documents') } },
     )
-    const scenarioPatch = parse(await readFile(join(root, 'cordis.patch.yml'), 'utf8'))
-    const preset = scenarioPatch[0].insert.find((entry: any) => entry.id === 'preset-water-hazard')
+    const scenarioPatch = await readBundlePatches()
+    const entries = scenarioPatch.flatMap(patch => patch.insert ?? [])
+    const preset = entries.find(entry => entry.id === 'preset-water-hazard')!
     preset.config.plugins[0].config = { apiBaseUrl: fixture.url }
-    const queryPreset = scenarioPatch[0].insert.find((entry: any) => entry.id === 'preset-hydrology-query')
+    const queryPreset = entries.find(entry => entry.id === 'preset-hydrology-query')!
     queryPreset.config.plugins[0].config = { cubeUrl: cube.url }
     const latePlugin = join(temp, 'late-notice.mjs')
     await writeFile(latePlugin, `

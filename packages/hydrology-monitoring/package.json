@@ -1,0 +1,115 @@
+{
+  "name": "dsh-agent-hydrology-monitoring",
+  "version": "0.1.0",
+  "description": "水文查询、父任务与独立报告插件。",
+  "private": true,
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json",
+    "./tools": {
+      "types": "./lib/tools/index.d.ts",
+      "default": "./lib/tools/index.js"
+    },
+    "./query-child": {
+      "types": "./lib/agents/query-child/index.d.ts",
+      "default": "./lib/agents/query-child/index.js"
+    },
+    "./results": {
+      "types": "./lib/infrastructure/results.d.ts",
+      "default": "./lib/infrastructure/results.js"
+    },
+    "./client": "./lib/client.js"
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts",
+    "skills/**"
+  ],
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "dsh-agent-charts",
+        "@deepseek-ai/dsh-client-ui-chat",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0",
+    "dsh": ">=0.2.1-rc.2 <0.3.0"
+  },
+  "scripts": {
+    "build:host": "tsc -p tsconfig.build.json",
+    "build": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('lib', { recursive: true, force: true })\" && pnpm build:host && node esbuild.config.mjs",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.client.json",
+    "test": "tsx --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "dsh-agent-charts": "workspace:*",
+    "dsh-agent-shared": "workspace:*",
+    "mdast-util-from-markdown": "^2.1.0",
+    "zod": "4.4.3"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.5",
+    "@deepseek-ai/dsh-agent": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-locale": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-chat": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-conversation": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-home-paths": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-llm": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-session": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-session-projection": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-session-query": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-skill-filesystem": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-subagent": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.2",
+    "@deepseek-ai/schemastery": "^3.18.5",
+    "@deepseek-ai/dsh-skill": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-system-prompt": "0.2.1-rc.2"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "link:../../../deepseek-harness/vendor/cordis",
+    "@deepseek-ai/cordis-plugin-loader": "link:../../../deepseek-harness/vendor/loader",
+    "@deepseek-ai/dsh-agent": "link:../../../deepseek-harness/packages/core/agent",
+    "@deepseek-ai/dsh-agent-loop": "link:../../../deepseek-harness/packages/core/agent-loop",
+    "@deepseek-ai/dsh-agent-preset": "link:../../../deepseek-harness/packages/preset/agent-preset",
+    "@deepseek-ai/dsh-agent-preset-registry": "link:../../../deepseek-harness/packages/preset/agent-preset-registry",
+    "@deepseek-ai/dsh-client-locale": "link:../../../deepseek-harness/packages/client/locale",
+    "@deepseek-ai/dsh-client-ui-chat": "link:../../../deepseek-harness/packages/client/ui-chat",
+    "@deepseek-ai/dsh-client-ui-conversation": "link:../../../deepseek-harness/packages/client/ui-conversation",
+    "@deepseek-ai/dsh-client-ui-renderer": "link:../../../deepseek-harness/packages/client/ui-renderer",
+    "@deepseek-ai/dsh-fs-local": "link:../../../deepseek-harness/packages/fs/fs-local",
+    "@deepseek-ai/dsh-home-paths": "link:../../../deepseek-harness/packages/util/home-paths",
+    "@deepseek-ai/dsh-llm": "link:../../../deepseek-harness/packages/llm/llm",
+    "@deepseek-ai/dsh-session": "link:../../../deepseek-harness/packages/core/session",
+    "@deepseek-ai/dsh-session-persistence-jsonl": "link:../../../deepseek-harness/packages/session/session-persistence-jsonl",
+    "@deepseek-ai/dsh-session-projection": "link:../../../deepseek-harness/packages/session/session-projection",
+    "@deepseek-ai/dsh-session-query": "link:../../../deepseek-harness/packages/session-query/session-query",
+    "@deepseek-ai/dsh-skill": "link:../../../deepseek-harness/packages/skill/skill",
+    "@deepseek-ai/dsh-skill-filesystem": "link:../../../deepseek-harness/packages/skill/skill-filesystem",
+    "@deepseek-ai/dsh-spill-local": "link:../../../deepseek-harness/packages/spill/spill-local",
+    "@deepseek-ai/dsh-spill-policy": "link:../../../deepseek-harness/packages/spill/spill-policy",
+    "@deepseek-ai/dsh-subagent": "link:../../../deepseek-harness/packages/subagent/subagent",
+    "@deepseek-ai/dsh-subagent-spawn-in-process": "link:../../../deepseek-harness/packages/subagent/subagent-spawn-in-process",
+    "@deepseek-ai/dsh-system-prompt": "link:../../../deepseek-harness/packages/core/system-prompt",
+    "@deepseek-ai/dsh-tools": "link:../../../deepseek-harness/packages/core/tools",
+    "@deepseek-ai/dsh-working-directory": "link:../../../deepseek-harness/packages/session/working-directory",
+    "@deepseek-ai/schemastery": "link:../../../deepseek-harness/vendor/schemastery",
+    "@types/node": "^22.20.0",
+    "@types/react": "^18.3.31",
+    "esbuild": "0.28.2",
+    "react": "18.3.1",
+    "tsx": "4.23.13",
+    "typescript": "6.0.3",
+    "yaml": "^2.4.2"
+  }
+}

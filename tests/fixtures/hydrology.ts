@@ -1,7 +1,7 @@
 /** 本地 Cube 语义目录和明细响应，无数据库或模型密钥依赖。 */
 import { createServer } from 'node:http'
 import { once } from 'node:events'
-import type { SemanticQuery } from '../../src/scenarios/hydrology-monitoring/protocol.ts'
+import type { SemanticQuery } from '../../packages/hydrology-monitoring/src/domain/protocol.ts'
 
 export const HISTORY = 'view_historical_trend_analysis'
 export const REALTIME = 'view_realtime_monitoring_analysis'
@@ -26,7 +26,7 @@ export function queryFor(model = HISTORY): SemanticQuery {
     time_dimensions: [], order: [], limit: null, offset: 0, ungrouped: true }
 }
 
-export type CubeFixtureOptions = { status?: number; continueWait?: number; invalid?: boolean; empty?: boolean; delay?: number; failModel?: string; rowCount?: number; failLoads?: number }
+export type CubeFixtureOptions = { status?: number; continueWait?: number; invalid?: boolean; empty?: boolean; delay?: number; failModel?: string; rowCount?: number; failLoads?: number; responseGate?: Promise<void> }
 export async function startCubeFixture(options: CubeFixtureOptions = {}) {
   const requests: { path: string; query?: Record<string, unknown>; authorization?: string }[] = []
   let waits = 0
@@ -37,6 +37,7 @@ export async function startCubeFixture(options: CubeFixtureOptions = {}) {
     const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) as { query: Record<string, unknown> } : undefined
     const path = request.url?.split('/').at(-1) ?? ''
     requests.push({ path, query: body?.query, authorization: request.headers.authorization })
+    if (options.responseGate) await options.responseGate
     if (options.delay) await new Promise(resolve => setTimeout(resolve, options.delay))
     const failure = options.failModel && Array.isArray(body?.query.dimensions) && body.query.dimensions.some(name => String(name).startsWith(`${options.failModel}.`))
     const transient = path === 'load' && failedLoads < (options.failLoads ?? 0)

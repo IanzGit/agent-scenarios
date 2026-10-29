@@ -1,7 +1,5 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
-import { parse } from 'yaml'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -13,18 +11,19 @@ import Sessions, { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session
 import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
-import PresetRegistry, { type PresetDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
+import PresetRegistry from '@deepseek-ai/dsh-agent-preset-registry'
 import AgentPreset from '@deepseek-ai/dsh-agent-preset'
 import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
 import WorkingDirectory from '@deepseek-ai/dsh-working-directory'
 import * as charts from 'dsh-agent-charts'
 import type { ChartSource } from 'dsh-agent-charts'
 import * as chartTools from 'dsh-agent-charts/tools'
-import * as plugin from '../../src/index.ts'
-import { TOOL_NAMES } from '../../src/scenarios/water-hazard/tools.ts'
+import * as plugin from 'dsh-agent-water-hazard'
+import { TOOL_NAMES } from '../../packages/water-hazard/src/tools/index.ts'
 import { CHART_TOOL_NAMES } from 'dsh-agent-charts/tools'
 import { startFixtureServer } from '../fixtures/server.ts'
 import { RecordedAdapter, recordings } from '../fixtures/recorded-model.ts'
+import { readBundlePatches } from '../fixtures/bundle.ts'
 
 async function harness() {
   const ctx = new Context()
@@ -46,13 +45,13 @@ async function harness() {
 }
 
 async function declareWaterHazard(ctx: Context, apiBaseUrl: string) {
-  const patch: { insert?: { id: string; config: PresetDefinition }[] }[] = parse(await readFile(new URL('../../cordis.patch.yml', import.meta.url), 'utf8'))
+  const patch = await readBundlePatches()
   const row = patch.flatMap(item => item.insert ?? []).find(item => item.id === 'preset-water-hazard')
   assert.ok(row)
   return ctx.plugin(AgentPreset, {
     ...row.config,
-    plugins: row.config.plugins.map(entry => entry.name === 'dsh-agent-scenarios/water-hazard'
-      ? { ...entry, name: new URL('../../src/scenarios/water-hazard/index.ts', import.meta.url).href, config: { apiBaseUrl } }
+    plugins: row.config.plugins.map(entry => entry.name === 'dsh-agent-water-hazard'
+      ? { ...entry, config: { apiBaseUrl } }
       : entry),
   })
 }
@@ -64,7 +63,7 @@ async function agentOn(ctx: Context, id: string, preset = 'water-hazard') {
   })
 }
 
-test('根入口、参数校验、完整 Markdown 结果和插件卸载均通过原生管线', async () => {
+test('水害包入口、参数校验、完整 Markdown 结果和插件卸载均通过原生管线', async () => {
   const fixture = await startFixtureServer()
   const ctx = await harness()
   try {

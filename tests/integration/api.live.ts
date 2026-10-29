@@ -6,8 +6,8 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
-import * as plugin from '../../src/index.ts'
-import { TOOL_NAMES } from '../../src/scenarios/water-hazard/tools.ts'
+import * as plugin from 'dsh-agent-water-hazard'
+import { TOOL_NAMES } from '../../packages/water-hazard/src/tools/index.ts'
 
 test('五个工具通过真实接口与原生校验，返回 Markdown 表格', { timeout: 180000 }, async () => {
   const ctx = new Context()

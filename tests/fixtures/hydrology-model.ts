@@ -1,7 +1,7 @@
 /** 无密钥模型录制，驱动原生父子会话及最终图表引用。 */
 import { LlmAdapter, ToolCallId, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import { HISTORY, REALTIME, queryFor } from './hydrology.ts'
-import type { TaskPlan } from '../../src/scenarios/hydrology-monitoring/task-protocol.ts'
+import type { TaskPlan } from '../../packages/hydrology-monitoring/src/domain/task-protocol.ts'
 
 export function hydrologyStep(messages: { role: string; text: string; name?: string }[], tools: string[]): { tool: string; args: Record<string, unknown> } | { text: string } {
   const observations = messages.filter(message => message.role === 'tool').map(message => message.text)

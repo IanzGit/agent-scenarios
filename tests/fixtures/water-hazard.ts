@@ -1,9 +1,9 @@
 /** 固定接口响应；不依赖 Python 服务或真实网络。 */
-import { WaterHazardAPI, type ApiRow } from '../../src/scenarios/water-hazard/api.ts'
-import { deviceStatus } from '../../src/scenarios/water-hazard/services/devices.ts'
-import { deviceAlarm, modelWarning, warningStatistics } from '../../src/scenarios/water-hazard/services/warnings.ts'
-import { hydrologicalTrend } from '../../src/scenarios/water-hazard/services/trends.ts'
-import { resolveSettings } from '../../src/scenarios/water-hazard/config.ts'
+import { WaterHazardAPI, type ApiRow } from '../../packages/water-hazard/src/infrastructure/api.ts'
+import { deviceStatus } from '../../packages/water-hazard/src/services/devices.ts'
+import { deviceAlarm, modelWarning, warningStatistics } from '../../packages/water-hazard/src/services/warnings.ts'
+import { hydrologicalTrend } from '../../packages/water-hazard/src/services/trends.ts'
+import { resolveSettings } from '../../packages/water-hazard/src/config.ts'
 
 export type Request = { path: string; form: URLSearchParams; init?: RequestInit }
 export function mockBusiness(handler: (request: Request) => unknown | Promise<unknown>) {

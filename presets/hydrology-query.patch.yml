@@ -1,0 +1,11 @@
+- insert:
+    - id: preset-hydrology-query
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: hydrology-query
+        name: 水文查询子智能体
+        description: 仅供水文监测查数场景委派单个完整查询任务。
+        order: 2
+        plugins:
+          - id: hydrology-query-child
+            name: dsh-agent-hydrology-monitoring/query-child
