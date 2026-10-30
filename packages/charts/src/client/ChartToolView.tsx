@@ -8,6 +8,7 @@ const titles: Record<string, string> = {
   render_pie_chart: '饼图',
   render_stacked_bar_chart: '堆叠柱状图',
   render_scatter_chart: '散点图',
+  render_html_chart: '图形文档',
 }
 
 // 仅保留 wire 名称，浏览器不导入 Host 工具或来源服务。

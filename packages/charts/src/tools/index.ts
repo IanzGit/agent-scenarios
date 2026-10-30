@@ -6,13 +6,14 @@ import * as bar from './bar.ts'
 import * as pie from './pie.ts'
 import * as stackedBar from './stacked-bar.ts'
 import * as scatter from './scatter.ts'
+import * as html from './html.ts'
 
-const tools = [line, bar, pie, stackedBar, scatter]
+const tools = [line, bar, pie, stackedBar, scatter, html]
 export const CHART_TOOL_NAMES = tools.map(tool => tool.name)
 export const name = 'chart-tools'
 export const inject = ['tools', 'chartSources']
 
-/** 将五类工具注册到调用者所属 preset，注册随插件一起释放。 */
+/** 将图表与文档工具注册到调用者所属 preset，注册随插件一起释放。 */
 export function apply(ctx: Context): void {
   for (const tool of tools) ctx.tools.register(tool.createTool(ctx.chartSources))
 }

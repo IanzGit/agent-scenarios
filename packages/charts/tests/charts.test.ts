@@ -82,7 +82,7 @@ async function harness() {
     parameters: { fail: { type: 'boolean' }, cancel: { type: 'boolean' } },
     output: { schema: { type: 'object', additionalProperties: false, properties: { chart_source: charts.chartSourceSchema } }, render: () => [] },
     execute: async (args, exec) => {
-      lastSource = ctx.chartSources.prepare(exec, [dataset])
+      lastSource = ctx.chartSources.prepare(exec, [dataset], [{ id: 'document', title: '测试文档', html: '<!DOCTYPE html><html><body><svg></svg></body></html>' }])
       if (args.fail) throw new Error('查询失败')
       if (args.cancel) cancel!.abort()
       return lastSource ? { chart_source: lastSource } : {}
@@ -136,10 +136,39 @@ test('原生图表参数校验、持久协议与旧版本1元数据回放保持�
     assert.equal(first.isError, false)
     assert.equal(first.content.some(block => block.type === 'text' && block.text.includes('series')), false)
     const meta = JSON.parse(JSON.stringify(first.meta))
-    assert.ok(chartFromMeta(meta)?.option.series)
+    assert.ok(chartFromMeta(meta)?.option?.series)
     assert.deepEqual(chartFromMeta(second.meta), chartFromMeta(meta))
     assert.equal(chartFromMeta({ agentScenariosChart: { version: 2, chart: {} } }), undefined)
     assert.equal((await execute(session, 'render_pie_chart', { ...args, source_id: 'forged' })).isError, true)
     assert.equal((await execute(session, 'render_pie_chart', { ...args, value_field: 123 })).isError, true)
+  } finally { await ctx.fiber.dispose() }
+})
+
+
+test('HTML图形使用版本2持久化，正文隐藏原HTML并拒绝跨会话、失败及过期来源', async () => {
+  const fixture = await harness()
+  const { ctx, session, other, execute } = fixture
+  try {
+    session.append('turn/start', { turn: 1 })
+    other.append('turn/start', { turn: 1 })
+    await execute(session, 'query_fixture', {})
+    const source = fixture.source()
+    assert.deepEqual(source.documents, [{ id: 'document', title: '测试文档' }])
+    assert.ok(!JSON.stringify(source).includes('<svg'))
+    const args = { source_id: source.source_id, document_id: 'document', title: '测试文档' }
+    const rendered = await execute(session, 'render_html_chart', args)
+    assert.equal(rendered.isError, false)
+    const card = chartFromMeta(JSON.parse(JSON.stringify(rendered.meta)))
+    assert.equal(card?.chart_type, 'html')
+    assert.ok(card?.chart_type === 'html' && card.html.includes('<svg'))
+    assert.ok(!JSON.stringify(rendered.content).includes('<svg'))
+    assert.deepEqual(chartFromMeta((await execute(session, 'render_html_chart', args)).meta), card)
+    assert.equal((await execute(other, 'render_html_chart', args)).isError, true)
+    assert.equal((await execute(session, 'render_html_chart', { ...args, document_id: 'forged' })).isError, true)
+    await execute(session, 'query_fixture', { fail: true })
+    assert.equal((await execute(session, 'render_html_chart', { ...args, source_id: fixture.source().source_id })).isError, true)
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    session.append('turn/start', { turn: 2 })
+    assert.equal((await execute(session, 'render_html_chart', args)).isError, true)
   } finally { await ctx.fiber.dispose() }
 })

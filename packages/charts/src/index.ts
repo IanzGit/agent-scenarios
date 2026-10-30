@@ -5,7 +5,7 @@ import { ChartSources } from './service.ts'
 export { ChartSources }
 export { renderChart } from './render.ts'
 export { chartSourceSchema, renderChartSource } from './schemas.ts'
-export type { ChartColumn, ChartDataset, ChartOption, ChartResult, ChartRow, ChartSelection, ChartSource, ChartType } from './types.ts'
+export type { ChartColumn, ChartDataset, ChartOption, ChartResult, ChartRow, ChartSelection, ChartSource, ChartType, HtmlDocument, HtmlChartResult } from './types.ts'
 
 export const name = 'charts'
 export const inject = ChartSources.inject

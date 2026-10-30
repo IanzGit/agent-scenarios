@@ -11,7 +11,7 @@ import { resolve, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { chromium, expect } from '@playwright/test'
 import { parse, stringify } from 'yaml'
-import { recordings, recordedArgs, recordedText } from '../fixtures/recorded-model.ts'
+import { recordings, recordedArgs, recordedText, scenarioForPrompt } from '../fixtures/recorded-model.ts'
 import { startFixtureServer } from '../fixtures/server.ts'
 import { startCubeFixture } from '../fixtures/hydrology.ts'
 import { hydrologyStep } from '../fixtures/hydrology-model.ts'
@@ -33,10 +33,10 @@ test('Harness Web 在最终正文段落内展示图表，执行区折叠后仍�
       const text = (message: typeof body.messages[number]) => typeof message.content === 'string' ? message.content : message.content?.map(block => block.text ?? '').join('') ?? ''
       const toolNames = body.tools?.map(tool => tool.function.name) ?? []
       const hydrology = toolNames.includes('query_hydrology') || toolNames.includes('run_semantic_query')
-      const userIndex = body.messages.findLastIndex(message => message.role === 'user' && (text(message).includes('当前矿井总体') || text(message).includes('近30天关键')))
+      const userIndex = body.messages.findLastIndex(message => message.role === 'user' && /^(当前矿井总体|近30天关键|近期需要关注|分析85211|生成85211|根据水文多维数据生成85211)/.test(text(message).trim()))
       const titleRequest = !toolNames.length && body.messages.some(message => message.role === 'system' && text(message).startsWith('Create a concise title for an AI coding-assistant session'))
       if (!hydrology && userIndex < 0 && !titleRequest) throw new Error(`未识别的模型请求：${body.messages.map(message => text(message).slice(0, 300)).join('\n')}`)
-      const scenario = hydrology || titleRequest ? 'hydrology' : text(body.messages[userIndex]).includes('趋势') ? 'trend' : 'overview'
+      const scenario = hydrology || titleRequest ? 'hydrology' : scenarioForPrompt(text(body.messages[userIndex]))
       const round = hydrology ? body.messages : body.messages.slice(userIndex + 1)
       const position = round.reduce((total, message) => total + (message.tool_calls?.length ?? 0), 0)
       const step = titleRequest ? { text: '主斜井水位监测分析' } : hydrology ? hydrologyStep(body.messages.map(message => ({ role: message.role, text: text(message) })), toolNames) : recordings[scenario][position]
@@ -186,6 +186,41 @@ export function apply(ctx) {
       assert.deepEqual(pageErrors, [])
       await mkdir(join(root, 'test-results'), { recursive: true })
       await page.screenshot({ path: join(root, 'test-results/charts.png'), fullPage: true })
+      // 补齐的四个水害场景仍使用同一个 preset、原生工具和正文引用。
+      for (const [question, heading, count] of [
+        ['近期需要关注的防治水重点问题', '近期水害重点分析', 8],
+        ['分析85211工作面顶板水害预警情况', '85211工作面顶板水害预警分析', 9],
+        ['生成85211工作面突水仿真与处置预案', '85211工作面突水仿真与处置预案', 11],
+        ['根据水文多维数据生成85211工作面防治水周期报告', '矿井水害防治复盘报告', 11],
+      ] as const) {
+        await input.fill(question)
+        await input.press('Enter')
+        await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible({ timeout: 30000 })
+        await expect(cards).toHaveCount(count)
+      }
+      const roofFrame = page.frameLocator('iframe[title="85211工作面顶板水害三图"]')
+      await expect(roofFrame.locator('.map-card')).toHaveCount(3)
+      await expect(roofFrame.locator('.legend')).toHaveCount(3)
+      await expect(roofFrame.locator('.workface-label').first()).toHaveText('85211工作面')
+      const roofBox = await page.locator('iframe[title="85211工作面顶板水害三图"]').boundingBox()
+      assert.ok(roofBox && roofBox.height > 80 && roofBox.height < 1000)
+      await page.locator('iframe[title="85211工作面顶板水害三图"]').screenshot({ path: join(root, 'test-results/roof-maps.png') })
+      const floodFrame = page.frameLocator('iframe[title="85211工作面井巷水淹仿真图"]')
+      const initialTime = await floodFrame.locator('#simulation-time').textContent()
+      await expect.poll(() => floodFrame.locator('#simulation-time').textContent()).not.toBe(initialTime)
+      await expect(page.frameLocator('iframe[title="85211工作面避灾路线图"]').locator('.escape-route')).toHaveCount(2)
+      await page.locator('iframe[title="85211工作面避灾路线图"]').screenshot({ path: join(root, 'test-results/escape-routes.png') })
+      const htmlIds = await page.locator('[data-chart-type="html"]').evaluateAll(elements => elements.map(element => element.getAttribute('data-chart-id')))
+      const htmlCalls = modelCalls, htmlQueries = fixture.requests.length
+      await page.screenshot({ path: join(root, 'test-results/water-hazard-scenarios.png'), fullPage: true })
+      await page.reload()
+      await expect(cards).toHaveCount(11, { timeout: 30000 })
+      await expect(roofFrame.locator('.map-card')).toHaveCount(3)
+      await expect(page.frameLocator('iframe[title="85211工作面避灾路线图"]').locator('.escape-route')).toHaveCount(2)
+      assert.deepEqual(await page.locator('[data-chart-type="html"]').evaluateAll(elements => elements.map(element => element.getAttribute('data-chart-id'))), htmlIds)
+      assert.equal(modelCalls, htmlCalls)
+      assert.equal(fixture.requests.length, htmlQueries)
+      assert.deepEqual(pageErrors, [])
       // 新场景从官方 preset 菜单选择，复用同一套正文图表插件。
       await page.getByRole('button', { name: 'New session', exact: true }).last().click()
       await page.getByRole('button', { name: 'water-hazard', exact: true }).click()

@@ -1,13 +1,13 @@
 # 煤矿场景工具与技能插件
 
-`dsh-agent-scenarios` 是一个 DeepSeek Harness Bundle 和轻量 pnpm Monorepo。每个业务领域使用独立的包、技能目录和 preset；提供水害领域的五个查询工具、两个技能，以及水文监测查数领域的 TS 查询子智能体和六个技能。业务代码全部为 TypeScript；通用图表由独立的标准 Host＋Client 插件 `dsh-agent-charts` 提供，不依赖原 Python 服务。
+`dsh-agent-scenarios` 是一个 DeepSeek Harness Bundle 和轻量 pnpm Monorepo。每个业务领域使用独立的包、技能目录和 preset；提供水害领域的十个业务工具、六个技能，以及水文监测查数领域的 TS 查询子智能体和六个技能。业务代码全部为 TypeScript；通用图表由独立的标准 Host＋Client 插件 `dsh-agent-charts` 提供，不依赖原 Python 服务。
 
 ## 目录与职责
 
 ```text
 agent-scenarios/
 ├── packages/
-│   ├── water-hazard/                # 水害插件：源码、两个技能、领域测试
+│   ├── water-hazard/                # 水害插件：源码、六个技能、静态资源、领域测试
 │   ├── hydrology-monitoring/        # 水文插件：查询子智能体、六个技能、报告 Client、测试
 │   ├── charts/                      # 通用 Host + Client 图表插件
 │   └── shared/                      # 公共结果契约与纯表格渲染
@@ -25,7 +25,7 @@ agent-scenarios/
 
 根包 `dsh-agent-scenarios` 只负责 Bundle 装配，不再导出 Host、业务子入口或 Client。`dsh.bundle.patch` 按顺序加载根补丁和三个 preset 文件；业务工具和技能仅在对应 preset 内注册。详细分层与入口迁移见 [架构说明](docs/architecture.md)。
 
-水害保留设备、预警、趋势三个 `services` 文件，工具定义、API 和图表输出适配分别放入 `tools`、`infrastructure`、`presentation`。水文按工具、查询子智能体、应用编排、领域协议、基础设施和展示适配组织，业务 Client 随水文包构建。每个业务包的 `skills` 负责工具选择、调用顺序、口径和报告规则。
+水害的 `services` 组织设备、预警、趋势、工作面、重点问题、顶板分析、仿真和复盘；`domain` 保留纯数值、插值及仿真计算；`infrastructure` 负责 API 与随包资源读取；`presentation` 负责表格来源和 SVG HTML 适配。水文按工具、查询子智能体、应用编排、领域协议、基础设施和展示适配组织，业务 Client 随水文包构建。每个业务包的 `skills` 负责工具选择、调用顺序、口径和报告规则。
 
 两个业务包通过公开入口依赖 `dsh-agent-shared` 和 `dsh-agent-charts`，互不依赖。shared 仅保留实际复用的结果契约与纯函数；依赖工具执行上下文的水害图表适配留在水害包内。图表插件不导入业务代码。
 
@@ -100,8 +100,13 @@ DSH_HOME="$PWD/.dsh" node --env-file-if-exists=.env ../deepseek-harness/apps/cli
 | `get_model_warning` | `{}` | 模型预警摘要、完整明细及判识信息 |
 | `get_warning_statistics` | `{}` | 事件总数摘要；类型、等级、每日数量统计仅作图表数据源 |
 | `get_hydrological_trend` | `{start_time?, end_time?}` | 四项指标统计、预警次数及原始时间序列 |
+| `get_location_workface` | `{}` | 可用工作面及当前工作面，额外返回 `workfaces / current_workface` |
+| `get_report_summary` | `{query, n_chunks?}` | 本地全文检索、掘进/回采重点表及原文所属年月 |
+| `analyze_roof_water_warning` | `{workface, start_time, end_time}` | 静态三图、五项动态、综合判定和 `stages` 阶段状态 |
+| `get_inrush_simulation` | `{workface, inrush_rate?, simulation_time?}` | 本地水淹、最多10人抽样路线、两张图形页面及应急参考 |
+| `get_hydrological_review` | `{workface, start_time?, end_time?}` | 周期质量、极值、趋势、前兆、水量响应及预报/规范依据 |
 
-统一业务结果为 `title / summary / period? / tables`，趋势额外返回 `series`。每个表格包含 `title / columns / rows`；原始序列包含 `name / unit / source / sensor / points`。`output.render` 输出摘要和展示用 Markdown 表格，数值最多显示两位小数，字符串阈值保留原始精度；标记 `chartOnly` 的表格仅作图表数据源，不进入模型文本。`series` 供程序化调用使用，不展开到模型文本。
+统一业务结果为 `title / summary / period? / tables`，趋势额外返回 `series`，顶板分析额外返回 `stages`，工作面工具额外返回 `workfaces / current_workface`。每个表格包含 `title / columns / rows`；原始序列包含 `name / unit / source / sensor / points`。`output.render` 输出摘要和展示用 Markdown 表格，数值最多显示两位小数，字符串阈值保留原始精度；标记 `chartOnly` 的表格仅作图表数据源，不进入模型文本。`series` 供程序化调用使用，不展开到模型文本。
 
 活动会话中，设备、预警统计和趋势查询额外返回 `chart_source` 目录：`source_id` 和每个数据集的 `id / title / columns / row_count`。只有最终成功的工具结果才发布来源；数据缓存按会话和轮次隔离，轮次结束后释放。无活动会话的程序化业务调用继续返回原有结果。
 
@@ -114,21 +119,24 @@ DSH_HOME="$PWD/.dsh" node --env-file-if-exists=.env ../deepseek-harness/apps/cli
 | `render_pie_chart` | 类别占比 | 数值非负、总值大于零，允许单类别 |
 | `render_stacked_bar_chart` | 分类构成 | 必须提供系列字段，各系列使用数据集声明的同一单位 |
 | `render_scatter_chart` | 逐行数值分布 | 数值横轴、分类纵轴，保留同分类的多条记录 |
+| `render_html_chart` | 自包含 SVG HTML 文档 | 参数为 `source_id / document_id / title`，仅接受本轮已授权的真实文档ID |
 
-公共参数为 `source_id / dataset_id / title / x_field / value_field`，折线及柱状工具另支持 `series_field`（堆叠必填）。单位由数据集数值字段提供。工具不接收模型编写的数据数组或 ECharts option，不重新取数、聚合或采样；重复类别需由业务层先行汇总。空数据或占比总量为零返回 `no_data`，非法字段和不可用来源明确失败。
+统计图公共参数为 `source_id / dataset_id / title / x_field / value_field`，折线及柱状工具另支持 `series_field`（堆叠必填）。单位由数据集数值字段提供。工具不接收模型编写的数据数组或 ECharts option，不重新取数、聚合或采样；重复类别需由业务层先行汇总。空数据或占比总量为零返回 `no_data`，非法字段和不可用来源明确失败。
 
-设备类型按区域汇总后绘制一张饼图；预警类型、等级各一张饼图，每日数量一张柱状图。趋势的涌水量、排水量、ZK4水位、中央水仓水位各一张独立折线图。两个 skill 规定这些调用关系；用户只问单项时只生成相关图。
+设备类型按区域汇总后绘制一张饼图；预警类型、等级各一张饼图，每日数量一张柱状图。趋势的涌水量、排水量、ZK4水位、中央水仓水位各一张独立折线图。总体与趋势 skill 规定这些调用关系；用户只问单项时只生成相关图。
 
 图表工具向模型输出图表 ID、标题、状态和摘要；完整配置存于 `output.presentationMeta` 的 `agentScenariosChart` 版本1载荷，随 Harness 会话保存。模型在最终回答的对应分析段落后，独立一行输出 `[图表:真实chart_id]`。Client 在 `conversation.chat.response.body` 中从本轮持久化元数据查找配置，复用 `InteractiveChart` 内嵌渲染，保留悬浮、图例、缩放、主题、尺寸适配和刷新回放。代码块和行内示例中的引用不作为图表；找不到本轮ID时显示不可用说明，不重新查询。工具调用卡片仅展示阶段和摘要，报告末尾不再通过 `turnTail` 汇总。
 
 该正文插槽由同工作区 Harness 的 `ui-chat` 前端提供；未安装图表插件时继续使用原生 Markdown。旧会话的最终回答没有引用标记时，在最终正文末尾恢复本轮已保存的图表；有引用的回答按标记位置展示。查询、来源注册及后端生成协议保持不变。
+
+顶板和仿真查询的 `chart_source` 额外提供 `documents: [{id,title}]`，HTML 仅暂存于同轮来源服务，不进入模型观察。`render_html_chart` 生成 `agentScenariosChart` 版本2元数据，包含自包含页面快照；统计图继续使用版本1。两种图形均通过 `[图表:真实chart_id]` 定位到正文，工具卡片仅显示摘要。HTML 在 `sandbox="allow-scripts"` 的 iframe 内展示，固定模板提供自动测高，CSP 限制外部资源和网络；刷新回放直接读取会话快照，不访问旧 Python 静态目录或重跑计算。
 
 图表插件的公开入口职责：
 
 | 入口 | 职责 |
 | --- | --- |
 | `dsh-agent-charts` | 全局 Host 服务，导出 `ChartSources`、数据集类型、来源目录 schema 和纯函数 `renderChart`；不注册模型工具 |
-| `dsh-agent-charts/tools` | 在调用者 preset 内注册五类图表工具 |
+| `dsh-agent-charts/tools` | 在调用者 preset 内注册五类统计图及 HTML 文档工具 |
 | `dsh-agent-charts/client` | 标准浏览器入口，声明依赖 `dsh-client-ui-tool`，由 `dsh.client` 自动加载；提供工具卡片、普通回复图表及独立报告正文 Factory |
 
 图表服务拥有全部来源缓存和会话监听；业务插件仅声明 `inject: ['tools', 'skills', 'systemPrompt', 'chartSources']`，使用 `ctx.chartSources.prepare(exec, datasets)` 返回目录。业务工具不管理图表服务的生命周期，通用表格模块也不依赖图表协议。
@@ -136,6 +144,34 @@ DSH_HOME="$PWD/.dsh" node --env-file-if-exists=.env ../deepseek-harness/apps/cli
 业务口径保持原实现：默认含参考日在内30个自然日；趋势显式日期成对提供，含首尾且最多31天。报警按事件ID去重，保留全部处置及误报状态；阈值按蓝黄橙红顺序，补充配置失败保留事件。统计页总数与等级明细严格核对，缺事件日期补零。趋势保留原始精度、重复时间点和空值，统计使用有限值，缺单位显示“单位未提供”。主接口失败明确报错，不用空结果替代。
 
 示例问题：“当前矿井总体水害监测预警情况汇总分析”“近30天关键水文指标的变化趋势”“分析2026-08-01至2026-08-30的水文趋势”。
+
+### 补齐的四个典型场景
+
+| 场景技能 | 调用顺序 | 正文内容 |
+| --- | --- | --- |
+| `water-hazard-focus` | 工作面列表 → 重点问题检索 | 掘进、回采两段，完整五列表格、来源年月 |
+| `water-hazard-roof` | 工作面列表 → 顶板分析 → HTML展示 | 静态三图、动态指标、综合指标三段 |
+| `water-hazard-emergency` | 工作面列表 → 本地仿真 → 两次HTML展示 | 水害仿真、避灾路线、待执行应急流程和调度脚本 |
+| `water-hazard-review` | 工作面列表 → 周期复盘 | 工作面概况、水文监测概况、主要问题与改进、总结，800字以内 |
+
+工作面工具沿用45208、85211与接口可用列表的交集，以及四盘区/八盘区到当前工作面的关联。用户明确指定时不能替换；未指定时使用有效当前工作面，无法确定则追问。顶板和复盘默认使用配置参考日，显式周期保留原实现约束，可超过31天；顶板工具本身要求两项日期，技能负责计算默认范围。静态或动态阶段失败保留其他成功部分，综合阶段跳过，不以正常或零值替代失败。
+
+静态三图使用随包CSV，运行时执行球状变差模型普通Kriging、150×150网格、原IDW回退和工作面评分；图例、边界、钻孔及等值面由SVG呈现。仿真沿用50米网格、原水淹传播和A*路线，默认1800m³/h、86400秒、12帧动画、最多随机10人。原算法的填充完成状态为 `sub_type=1`（半淹），未生成 `sub_type=2`（全淹）；此次保持模型口径，未把填充状态另行改判为全淹。人员结果只代表抽样模拟。
+
+知识库随包保存原 `doc_chunks` 的207条文本、元数据、标签和文件名，使用中文分词、同义词和BM25全文检索；无需运行时Python、Chroma或嵌入模型。预报资料的2025年/2026年5月时间保留，不代表当前周期的新预报。复盘保留原实际监测范围，邻近工作面、盘区、地表数据作为背景，水量响应为统计拟合。
+
+更新知识库时，从原库只读重新导出；更新静态CSV后重新构建和安装即可在运行时重算：
+
+```bash
+node scripts/export-water-hazard-knowledge.mjs /path/to/chroma.sqlite3
+pnpm typecheck
+pnpm test
+pnpm build
+```
+
+开发用数值对照可在具有numpy、scipy、pykrige、pandas、matplotlib的独立Python环境执行 `python scripts/reference-water-hazard.py /path/to/app/agents/tools/water_hazard`。生成的固定夹具由TS测试读取；发布包及正常测试不依赖Python。对照覆盖静态网格与两个工作面评分、70组动态边界、120组综合组合、仿真路线与撤离时间，以及复盘统计。浏览器覆盖三图、动画、路线和不重新请求接口的刷新回放。
+
+示例：“近期需要关注的防治水重点问题”“分析85211工作面顶板水害预警情况”“生成85211工作面突水仿真与处置预案”“根据水文多维数据生成85211工作面防治水周期报告”。安装或更新Bundle后按前文命令重新安装并重启，新会话使用更新后的工具和六个技能。
 
 ## 新增领域
 
@@ -245,7 +281,7 @@ pnpm exec playwright install chromium
 pnpm test:browser
 ```
 
-水害工具、图表工具、技能名、环境变量和默认参考日期保持兼容。水文主会话的 `query_hydrology / get_hydrology_query_result` 已切换为父任务协议，不兼容旧逐子会话参数；已生成的普通历史回复不自动转换为独立报告。图表继续保持工具名称、参数、来源目录及 `agentScenariosChart` 版本1协议，原有新图表会话仍可回放。旧 `meta.waterHazard` 图表不转换，缺少新元数据的历史记录继续显示原有文本和表格。仅生成图表所需的数据进入持久展示载荷，业务原始 `series` 不另存一份。
+水害工具、图表工具、技能名、环境变量和默认参考日期保持兼容。水文主会话的 `query_hydrology / get_hydrology_query_result` 已切换为父任务协议，不兼容旧逐子会话参数；已生成的普通历史回复不自动转换为独立报告。已有统计图保持工具名称、参数、来源目录及 `agentScenariosChart` 版本1协议；新增HTML使用可选文档目录和版本2协议，原有新图表会话仍可回放。旧 `meta.waterHazard` 图表不转换，缺少新元数据的历史记录继续显示原有文本和表格。仅生成图表所需的数据进入持久展示载荷，业务原始 `series` 不另存一份。
 
 已移除 `pnpm start:web / test:web / smoke:api`；安装启动改用官方 CLI，真实接口检查统一为 `test:live`。旧版针对全局 `coal-mine-scenarios` 的配置应移到水害 preset 内的 `water-hazard-tools` 条目。已有 `.env`、`.dsh` 和 `temp/new.md` 保留，Harness 源码不变。
 

@@ -4,7 +4,12 @@ export type ChartRow = Record<string, string | number | null>
 export type ChartType = 'line' | 'bar' | 'pie' | 'stacked_bar' | 'scatter'
 export type ChartColumn = { name: string; title?: string; type: 'category' | 'time' | 'number'; unit?: string }
 export type ChartDataset = { id: string; title: string; columns: ChartColumn[]; rows: ChartRow[] }
-export type ChartSource = { source_id: string; datasets: (Omit<ChartDataset, 'rows'> & { row_count: number })[] }
+export type HtmlDocument = { id: string; title: string; html: string }
+export type ChartSource = { source_id: string; datasets: (Omit<ChartDataset, 'rows'> & { row_count: number })[]; documents?: Omit<HtmlDocument, 'html'>[] }
+export type HtmlChartResult = {
+  chart_id: string; chart_type: 'html'; title: string; source_id: string; document_id: string
+  status: 'rendered'; summary: string; html: string
+}
 export type ChartSelection = {
   source_id: string
   dataset_id: string

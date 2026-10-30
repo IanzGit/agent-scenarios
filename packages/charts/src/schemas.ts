@@ -6,6 +6,9 @@ export const chartSourceSchema = {
   type: 'object', additionalProperties: false,
   properties: {
     source_id: { type: 'string', required: true },
+    documents: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
+      id: { type: 'string', required: true }, title: { type: 'string', required: true },
+    } } },
     datasets: {
       type: 'array', required: true,
       items: {

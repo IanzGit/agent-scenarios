@@ -72,11 +72,11 @@ test('水害包入口、参数校验、完整 Markdown 结果和插件卸载均�
     const chartFiber = ctx.plugin(chartTools)
     await chartFiber
     assert.deepEqual(ctx.tools.schemas().map(tool => tool.name), [...TOOL_NAMES, ...CHART_TOOL_NAMES])
-    assert.deepEqual((await ctx.skills.list()).map(skill => skill.name), ['water-hazard-overview', 'water-hazard-trend'])
+    assert.deepEqual((await ctx.skills.list()).map(skill => skill.name), ['water-hazard-emergency', 'water-hazard-focus', 'water-hazard-overview', 'water-hazard-review', 'water-hazard-roof', 'water-hazard-trend'])
     const invalid = await ctx.tools.execute({ callId: ToolCallId('invalid'), name: 'get_hydrological_trend', arguments: { start_time: 123 }, signal: new AbortController().signal })
     assert.equal(invalid.isError, true)
     assert.equal(fixture.requests.length, 0)
-    for (const name of TOOL_NAMES) {
+    for (const name of TOOL_NAMES.slice(0, 5)) {
       const executed = await ctx.tools.execute({ callId: ToolCallId(name), name, arguments: {}, signal: new AbortController().signal })
       assert.equal(executed.isError, false, name)
       assert.equal(executed.meta, undefined)
@@ -107,7 +107,7 @@ test('preset 只向本领域暴露工具、技能和日期，释放后撤销全�
     const water = waterHandle.agent
     const other = otherHandle.agent
     assert.deepEqual(ctx.tools.schemas(water).map(tool => tool.name), [...TOOL_NAMES, ...CHART_TOOL_NAMES, 'skill'])
-    assert.deepEqual((await ctx.skills.list({ scope: water })).map(skill => skill.name), ['water-hazard-overview', 'water-hazard-trend'])
+    assert.deepEqual((await ctx.skills.list({ scope: water })).map(skill => skill.name), ['water-hazard-emergency', 'water-hazard-focus', 'water-hazard-overview', 'water-hazard-review', 'water-hazard-roof', 'water-hazard-trend'])
     assert.deepEqual(ctx.tools.schemas(other), [])
     assert.deepEqual(await ctx.skills.list({ scope: other }), [])
     assert.deepEqual(ctx.tools.schemas(), [])
@@ -207,6 +207,47 @@ for (const scenario of ['overview', 'trend']) test(`固定模型响应驱动 ${s
     assert.equal(adapter.requests.length, recordings[scenario].length)
     assert.ok(events.some(event => event.type === 'turn/end'))
     assert.deepEqual(JSON.parse(JSON.stringify(tableResults)), tableResults)
+    await handle.dispose()
+  } finally { await ctx.fiber.dispose(); await fixture.close() }
+})
+
+const newScenarios: Record<string, { question: string; charts: number; tool: string }> = {
+  focus: { question: '近期需要关注的防治水重点问题', charts: 0, tool: 'get_report_summary' },
+  roof: { question: '分析85211工作面顶板水害预警情况', charts: 1, tool: 'analyze_roof_water_warning' },
+  emergency: { question: '生成85211工作面突水仿真与处置预案', charts: 2, tool: 'get_inrush_simulation' },
+  review: { question: '根据水文多维数据生成85211工作面防治水周期报告', charts: 0, tool: 'get_hydrological_review' },
+}
+for (const [scenario, expected] of Object.entries(newScenarios)) test(`固定模型驱动 ${scenario}，工具、技能、表格与HTML展示经过完整Harness管线`, async () => {
+  const fixture = await startFixtureServer()
+  const ctx = await harness()
+  try {
+    await declareWaterHazard(ctx, fixture.url)
+    const adapter = new RecordedAdapter()
+    ctx.llm.registerAdapter(['recorded'], adapter)
+    const handle = await agentOn(ctx, scenario)
+    const events: SessionEvent[] = []
+    ctx.on('session/event', (session, event) => { if (session === handle.agent.session) events.push(event) })
+    handle.agent.followup(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: expected.question }] }))
+    await handle.agent.whenIdle()
+    const calls = events.filter(event => event.type === 'tool/call')
+    assert.deepEqual(calls.map(event => event.data.name), recordings[scenario].filter(step => 'tool' in step).map(step => step.tool))
+    const results = events.filter(event => event.type === 'tool/result')
+    assert.ok(results.every(event => !event.data.message.isError), JSON.stringify(results.filter(event => event.data.message.isError)))
+    const images = results.filter(event => event.data.meta !== undefined)
+    assert.equal(images.length, expected.charts)
+    assert.ok(images.every(event => {
+      const meta = event.data.meta as { agentScenariosChart: { version: number; chart: { html: string } } }
+      return meta.agentScenariosChart.version === 2 && meta.agentScenariosChart.chart.html.includes('<svg')
+        && !JSON.stringify(event.data.message.content).includes('<svg')
+    }))
+    const businessCall = calls.find(event => event.data.name === expected.tool)!
+    const businessResult = results.find(event => event.data.message.source.callId === businessCall.data.callId)!
+    const observed = businessResult.data.message.content.filter(block => block.type === 'text').map(block => block.text).join('\n')
+    assert.match(observed, /\| --- \|/)
+    assert.ok(!observed.includes('<!DOCTYPE html>'))
+    assert.deepEqual(JSON.parse(JSON.stringify(images)), images)
+    assert.equal(adapter.requests.length, recordings[scenario].length)
+    assert.ok(events.some(event => event.type === 'turn/end'))
     await handle.dispose()
   } finally { await ctx.fiber.dispose(); await fixture.close() }
 })

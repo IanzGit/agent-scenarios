@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>{{TITLE}}</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, -apple-system, "Microsoft YaHei", sans-serif; color: black; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 2px; background: white; }
+    figure { margin: 0; }
+    svg { display: block; width: 100%; height: auto; border: 2px solid black; }
+    text { font-size: 18px; }
+    #simulation-time { font-size: 24px; font-weight: 600; }
+    .roadways line { stroke-linecap: round; }
+    .escape-route { fill: none; stroke-width: 4; stroke-dasharray: 10 5; }
+    .source { fill: red; }
+    .exit { fill: green; }
+    .person { fill: blue; }
+    .source text, .exit text, .person text { font-size: 16px; stroke: white; stroke-width: 3px; paint-order: stroke; }
+    .legend rect { fill: white; fill-opacity: .95; stroke: gray; }
+    .legend text { font-size: 16px; }
+    .legend line { stroke-width: 4; }
+    figcaption { padding-top: 2px; text-align: center; font-size: clamp(16px, 2.2vw, 26px); font-weight: 650; }
+  </style>
+</head>
+<body>
+  <figure>{{SVG}}<figcaption>{{MAP_TITLE}}</figcaption></figure>
+  <script id="map-layout">
+    (() => {
+      const svg = document.querySelector('svg');
+      const map = document.getElementById('map-content');
+      const legend = svg.querySelector('.legend');
+      const bounds = map.getBBox();
+      const legendBounds = legend.getBBox();
+      const mapTop = legendBounds.y + legendBounds.height
+        + legend.transform.baseVal.consolidate().matrix.f + 8;
+      map.setAttribute('transform', `translate(0 ${mapTop - bounds.y})`);
+      svg.viewBox.baseVal.height = mapTop + bounds.height + 8;
+      if (parent === window) return;
+      let parentOrigin = '';
+      const sendHeight = () => {
+        if (!parentOrigin) return;
+        parent.postMessage({
+          type: 'water-hazard:inrush-report-height',
+          height: Math.ceil(document.body.getBoundingClientRect().height),
+        }, parentOrigin);
+      };
+      addEventListener('message', event => {
+        if (event.source !== parent || event.data?.type !== 'water-hazard:inrush-report-resize') return;
+        parentOrigin = event.origin;
+        document.documentElement.style.overflowY = 'hidden';
+        sendHeight();
+      });
+      new ResizeObserver(sendHeight).observe(document.body);
+    })();
+  </script>
+  <script id="animation-data" type="application/json">{{ANIMATION}}</script>
+  <script>
+    (() => {
+      const { frames, colors } = JSON.parse(document.getElementById('animation-data').textContent);
+      if (!frames.length) return;
+      const roadways = [...document.querySelectorAll('[data-roadway-id]')];
+      const timeLabel = document.getElementById('simulation-time');
+      let frameIndex = 0;
+      const renderFrame = () => {
+        const frame = frames[frameIndex];
+        for (const roadway of roadways) {
+          const status = frame.roadway_final_status[roadway.dataset.roadwayId].status;
+          roadway.setAttribute('stroke', colors[status]);
+          roadway.querySelector('title').textContent = `${roadway.dataset.name}：${status}`;
+        }
+        timeLabel.textContent = `T+${Number((frame.time / 3600).toFixed(2))}h`;
+        frameIndex = (frameIndex + 1) % frames.length;
+      };
+      renderFrame();
+      setInterval(renderFrame, 500);
+    })();
+  </script>
+</body>
+</html>

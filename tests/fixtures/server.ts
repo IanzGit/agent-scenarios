@@ -9,10 +9,11 @@ export async function startFixtureServer() {
     try {
       const chunks: Buffer[] = []
       for await (const chunk of request) chunks.push(Buffer.from(chunk))
-      const payload = Object.fromEntries(new URLSearchParams(Buffer.concat(chunks).toString()))
-      const data = await fixture.api.post(request.url ?? '', payload, new AbortController().signal)
-      response.writeHead(200, { 'Content-Type': 'application/json' })
-      response.end(JSON.stringify({ code: 200, data }))
+      const upstream = await fixture.fetcher(`http://fixture${request.url ?? ''}`, {
+        method: request.method, body: request.method === 'GET' ? undefined : Buffer.concat(chunks).toString(),
+      })
+      response.writeHead(upstream.status, { 'Content-Type': 'application/json' })
+      response.end(await upstream.text())
     } catch (error) {
       response.writeHead(500, { 'Content-Type': 'application/json' })
       response.end(JSON.stringify({ code: 500, msg: error instanceof Error ? error.message : String(error) }))

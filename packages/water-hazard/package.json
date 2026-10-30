@@ -16,7 +16,9 @@
   "files": [
     "lib/**/*.js",
     "lib/**/*.d.ts",
-    "skills/**"
+    "skills/**",
+    "assets/**",
+    "licenses/**"
   ],
   "engines": {
     "node": "^22.19.0 || >=24.0.0",
@@ -29,6 +31,7 @@
     "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
+    "d3-contour": "4.0.2",
     "dsh-agent-charts": "workspace:*",
     "dsh-agent-shared": "workspace:*"
   },
@@ -49,6 +52,7 @@
     "@types/node": "^22.20.0",
     "tsx": "4.23.13",
     "typescript": "6.0.3",
-    "@deepseek-ai/dsh-skill": "link:../../../deepseek-harness/packages/skill/skill"
+    "@deepseek-ai/dsh-skill": "link:../../../deepseek-harness/packages/skill/skill",
+    "@types/d3-contour": "3.0.6"
   }
 }

@@ -10,7 +10,7 @@ export type { ReportBodyInput } from './report-contract.ts'
 
 export const inject = ['slots', 'uiConversation']
 
-/** 五类工具共用一套卡片，注册及样式随插件卸载释放。 */
+/** 图表与文档工具共用一套卡片，注册及样式随插件卸载释放。 */
 export function apply(ctx: Context): void {
   ctx.slots.registerFactory({ name: 'agent-scenarios.report.body', scope: 'session' }, ReportBody)
   ctx.uiConversation.events.register(chartDefinition)

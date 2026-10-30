@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>{{WORKFACE}}工作面 · 顶板水害三图</title>
+  <style>
+    :root { color-scheme: light; font: 14px/1.5 system-ui, -apple-system, "Microsoft YaHei", sans-serif; color: black; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 8px; }
+    .map-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+    .map-card { position: relative; margin: 0; min-width: 0; overflow: hidden; }
+    .map-design { width: 600px; height: 520px; transform-origin: top left; }
+    .map-frame { position: relative; height: 480px; border: 2px solid black; background: white; }
+    .map { display: block; width: 100%; height: 100%; }
+    .zone { stroke: none; fill-opacity: .95; }
+    .contours { fill: none; stroke: black; stroke-width: .6; }
+    .contour-label { font-size: 12px; text-anchor: middle; dominant-baseline: central; fill: black; stroke: white; stroke-width: 2.5; paint-order: stroke; }
+    .mine-boundary { fill: none; stroke: black; stroke-width: 2; }
+    .workface-boundary { fill: none; stroke: red; stroke-width: 2.5; }
+    .workface-label { font-size: 13px; font-weight: 700; fill: red; stroke: white; stroke-width: 3; paint-order: stroke; }
+    .borehole { fill: white; stroke: black; stroke-width: 1.3; }
+    .borehole-label { font-size: 12px; dominant-baseline: central; fill: black; stroke: white; stroke-width: 2.5; paint-order: stroke; }
+    .borehole-leader { fill: none; stroke: black; stroke-width: .6; }
+    .north { fill: black; font-size: 13px; font-weight: 600; }
+    .empty { fill: #8898a3; font-size: 16px; }
+    .legend { position: absolute; right: 8px; bottom: 8px; margin: 0; padding: 8px 10px; list-style: none; background: #ffffffe6; border: 1px solid gray; border-radius: 3px; font-size: 18px; }
+    .legend li { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+    .legend li + li { margin-top: 3px; }
+    .legend i { width: 28px; height: 16px; border: 1px solid black; }
+    figcaption { height: 40px; padding: 8px 0 0; text-align: center; font-size: 26px; line-height: 32px; font-weight: 650; }
+  </style>
+</head>
+<body>
+  <main class="map-grid" aria-label="顶板水害三图">{{MAP_CARDS}}</main>
+  <script>
+    (() => {
+      const cards = [...document.querySelectorAll('.map-card')];
+      const resizeMaps = () => {
+        for (const card of cards) {
+          const design = card.querySelector('.map-design');
+          const scale = card.getBoundingClientRect().width / design.offsetWidth;
+          design.style.transform = `scale(${scale})`;
+          card.style.height = `${design.offsetHeight * scale}px`;
+        }
+      };
+      resizeMaps();
+      addEventListener('resize', resizeMaps);
+      if (parent === window) return;
+      let parentOrigin = '';
+      const sendHeight = () => {
+        if (!parentOrigin) return;
+        parent.postMessage({
+          type: 'water-hazard:three-maps-height',
+          height: Math.ceil(document.body.getBoundingClientRect().height),
+        }, parentOrigin);
+      };
+      addEventListener('message', event => {
+        if (event.source !== parent || event.data?.type !== 'water-hazard:three-maps-resize') return;
+        parentOrigin = event.origin;
+        sendHeight();
+      });
+      new ResizeObserver(sendHeight).observe(document.body);
+    })();
+  </script>
+</body>
+</html>

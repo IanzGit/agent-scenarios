@@ -4,12 +4,34 @@ import { init, use, type EChartsCoreOption } from 'echarts/core'
 import { LineChart, BarChart, PieChart, ScatterChart } from 'echarts/charts'
 import { TitleComponent, TooltipComponent, GridComponent, LegendComponent, DataZoomComponent, AriaComponent } from 'echarts/components'
 import { SVGRenderer } from 'echarts/renderers'
-import type { ChartCard } from './chart-meta.ts'
+import type { ChartCard, NumericChartCard } from './chart-meta.ts'
 
 use([LineChart, BarChart, PieChart, ScatterChart, TitleComponent, TooltipComponent, GridComponent, LegendComponent, DataZoomComponent, AriaComponent, SVGRenderer])
 
 /** 一张图的实例、尺寸监听和主题监听均归组件生命周期所有。 */
 export function InteractiveChart({ chart }: { chart: ChartCard }) {
+  return chart.chart_type === 'html' ? <HtmlChart chart={chart} /> : <NumericChart chart={chart} />
+}
+
+function HtmlChart({ chart }: { chart: Extract<ChartCard, { chart_type: 'html' }> }) {
+  const ref = useRef<HTMLIFrameElement>(null)
+  const [height, setHeight] = useState(400)
+  useEffect(() => {
+    const receive = (event: MessageEvent) => {
+      if (event.source !== ref.current?.contentWindow || event.data?.type !== 'chart-document:height') return
+      if (typeof event.data.height === 'number' && Number.isFinite(event.data.height)) setHeight(Math.max(80, Math.min(10000, event.data.height)))
+    }
+    window.addEventListener('message', receive)
+    return () => { window.removeEventListener('message', receive) }
+  }, [chart])
+  return <figure className="agent-scenarios-chart" data-chart-id={chart.chart_id} data-chart-type="html">
+    <iframe ref={ref} title={chart.title} sandbox="allow-scripts" srcDoc={chart.html}
+      style={{ width: '100%', height, border: 0 }} />
+    <figcaption>{chart.summary}</figcaption>
+  </figure>
+}
+
+function NumericChart({ chart }: { chart: NumericChartCard }) {
   const ref = useRef<HTMLDivElement>(null)
   const [failed, setFailed] = useState(false)
   useEffect(() => {

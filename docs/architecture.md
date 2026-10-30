@@ -6,14 +6,14 @@
 
 | 包 | 目录与职责 |
 | --- | --- |
-| water-hazard | `src/index.ts` 配置与注册；`tools` 原生工具；`services` 设备、预警、趋势；`infrastructure` HTTP API；`presentation` 结果与图表来源适配 |
+| water-hazard | `src/index.ts` 配置与注册；`tools` 原生工具；`services` 业务取数与场景协调；`domain` 数值、插值、预警与仿真；`infrastructure` HTTP API和静态资源；`presentation` 结果、图表来源及SVG HTML；`assets` CSV、文档片段与页面模板 |
 | hydrology-monitoring | `src/index.ts` 全局父任务服务入口；`tools` 主智能体工具和技能注册；`agents/query-child` 查询子智能体及提示词；`application` 查询执行、结果协调与父任务调度；`domain` 语义目录、查询校验、版本化协议和报告校验；`infrastructure` Cube HTTP、文件结果存储与 Session 投影；`presentation` 表格与图表数据集；`client` 任务及报告节点 |
 | charts | 独立通用图表服务、工具及 Client，保持现有公开入口 |
 | shared | `result.ts` 结果类型、Schema、表格构造与纯 Markdown 渲染；`index.ts` 公开导出 |
 
-各业务包的技能位于本包 `skills`，领域测试位于本包 `tests`。跨插件及浏览器测试留在根部，共用 fixture 也在根部，避免复制。水害规模较小，三个 service 保留现有取数、计算及数据集适配，不为目录一致性强拆。水文领域层不依赖 Cordis Context、HTTP 或文件存储；语义目录解析和查询约束可直接测试。
+各业务包的技能位于本包 `skills`，领域测试位于本包 `tests`。跨插件及浏览器测试留在根部，共用 fixture 也在根部，避免复制。水害沿用原生工具和技能编排，复杂的顶板数值与本地仿真放入可独立对照测试的领域函数，服务负责接口、阶段状态与结果协调。水文领域层不依赖 Cordis Context、HTTP 或文件存储；语义目录解析和查询约束可直接测试。
 
-依赖关系为水害、水文分别依赖 shared 和 charts，两个业务包互不依赖。shared 不注册服务或持有会话状态；`withChartSource` 等依赖执行上下文的适配由水害包持有。charts 不依赖业务包或 shared。
+依赖关系为水害、水文分别依赖 shared 和 charts，两个业务包互不依赖。shared 不注册服务或持有会话状态；`withChartSource` 等依赖执行上下文的适配由水害包持有。charts 不依赖业务包或 shared。水害通过公开 `HtmlDocument` 类型及 `chartSources.prepare(exec, datasets, documents)` 提交自包含页面；charts仅负责授权、HTML展示与版本2快照，不包含水害算法。原统计图版本1和数值数据集契约继续兼容。
 
 ## 装配与构建
 

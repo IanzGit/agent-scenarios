@@ -37,8 +37,8 @@ export function calendarDate(value: unknown): string {
   return date
 }
 
-/** 未指定范围时使用配置参考日，显式范围最多31个自然日。 */
-export function resolvePeriod(settings: Settings, start = '', end = ''): Period {
+/** 未指定范围时使用配置参考日；趋势默认限制31天，新场景按原口径传入上限。 */
+export function resolvePeriod(settings: Settings, start = '', end = '', maxDays = 31): Period {
   start = start.trim()
   end = end.trim()
   if (Boolean(start) !== Boolean(end)) throw new Error('start_time 和 end_time 必须同时传入')
@@ -48,25 +48,29 @@ export function resolvePeriod(settings: Settings, start = '', end = ''): Period 
   }
   const days = (dateValue(end) - dateValue(start)) / 86400000 + 1
   if (days <= 0) throw new Error('start_time 不能晚于 end_time')
-  if (days > 31) throw new Error('查询时间跨度不能超过31天')
+  if (days > maxDays) throw new Error(`查询时间跨度不能超过${maxDays}天`)
   return { start, end }
 }
 
 export class WaterHazardAPI {
   constructor(readonly settings: Settings, private readonly fetcher: typeof fetch = fetch) {}
 
-  async post(path: string, payload: Record<string, string | number>, signal: AbortSignal): Promise<unknown> {
+  post(path: string, payload: Record<string, string | number>, signal: AbortSignal): Promise<unknown> {
+    return this.request(path, payload, signal)
+  }
+
+  private async request(path: string, payload: Record<string, string | number> | undefined, signal: AbortSignal): Promise<unknown> {
     for (let attempt = 0; ; attempt++) {
       signal.throwIfAborted()
       let response: Response
       try {
         response = await this.fetcher(`${this.settings.apiBaseUrl}${path}`, {
-          method: 'POST',
+          method: payload ? 'POST' : 'GET',
           headers: {
             Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded',
             ...(this.settings.apiToken.trim() ? { Authorization: `Bearer ${this.settings.apiToken.trim()}` } : {}),
           },
-          body: new URLSearchParams(Object.entries(payload).map(([key, value]): [string, string] => [key, String(value)])),
+          body: payload ? new URLSearchParams(Object.entries(payload).map(([key, value]): [string, string] => [key, String(value)])) : undefined,
           signal: AbortSignal.any([signal, AbortSignal.timeout(this.settings.apiTimeoutSeconds * 1000)]),
         })
       } catch (error) {
@@ -93,6 +97,7 @@ export class WaterHazardAPI {
         throw new WaterHazardAPIError(`${path} 返回的不是有效 JSON：${error instanceof Error ? error.message : String(error)}`)
       }
       signal.throwIfAborted()
+      if (!payload) return raw
       const body = object(raw, path)
       if (body.code !== 200) throw new WaterHazardAPIError(`${path} 业务请求失败：${String(body.msg ?? '响应格式错误')}`)
       if (!('data' in body)) throw new WaterHazardAPIError(`${path} 缺少 data 字段`)
@@ -158,6 +163,42 @@ export class WaterHazardAPI {
       sensorId, time_startTime: `${period.start} 00:00:00`, time_endTime: `${period.end} 23:59:59`,
     }, signal), path)
   }
+  structures(signal: AbortSignal): Promise<ApiRow[]> {
+    return this.pages('/app/api/screen/warnData/getSingleList.action', { labelName: '空间距离预警', pageSize: 100 }, signal)
+  }
+  async basic(signal: AbortSignal): Promise<ApiRow> {
+    const path = '/app/laptop/collierydata/collieryBasic/findBasic.action'
+    return object(await this.post(path, {}, signal), path)
+  }
+  async location(workface: string, signal: AbortSignal): Promise<ApiRow> {
+    const path = '/app/api/screen/data/getLastGeologyInfo.action'
+    const matches = rows(await this.post(path, { name: workface }, signal), path).filter(row => String(row.name ?? '').trim() === workface)
+    if (matches.length !== 1) throw new WaterHazardAPIError(`未返回工作面 ${workface} 的唯一定位记录`)
+    return matches[0]
+  }
+  async roadways(signal: AbortSignal): Promise<ApiRow[]> {
+    const path = '/app/api/simulation/getAllRoadwayData.action'
+    const data = object(await this.post(path, {}, signal), path)
+    const values = rows(data.resultData, path)
+    if (values.length !== count(data.totalSize, 'totalSize')) throw new WaterHazardAPIError('巷道数据不完整')
+    return values
+  }
+  async personnel(signal: AbortSignal): Promise<ApiRow[]> {
+    const path = '/app/api/simulation/getAllPersonData.action'
+    return rows(object(await this.post(path, {}, signal), path).resultData, path)
+  }
+  async basemap(signal: AbortSignal): Promise<ApiRow> {
+    const path = '/app/laptop/simulation/basemap/getBasemapJs.action'
+    const descriptor = object(await this.post(path, {}, signal), path)
+    const resource = requiredText(descriptor.平面底图, '平面底图')
+    if (!/^\/js\/dxf\/[A-Za-z0-9_./-]+$/.test(resource) || resource.split('/').includes('..')) throw new WaterHazardAPIError('平面底图路径无效')
+    const data = object(await this.request(resource, undefined, signal), resource)
+    const box = object(data.contentBox, '底图坐标范围')
+    for (const key of ['x', 'y', 'w', 'h']) numeric(box[key], `底图 ${key}`)
+    if (Number(box.w) <= 0 || Number(box.h) <= 0 || !Array.isArray(data.layersData) || !data.layersData.length) throw new WaterHazardAPIError('底图范围或图层无效')
+    data.layersData.forEach(layer => rows(layer, '底图图层'))
+    return data
+  }
   async realtime(signal: AbortSignal): Promise<ApiRow[]> {
     const path = '/app/api/screenData/getSensorSSData.action'
     return rows(await this.post(path, { screenId: this.settings.monitorScreenId }, signal), path)
@@ -176,4 +217,12 @@ export async function supplement<T>(load: () => Promise<T>, fallback: T, signal:
     if (!(error instanceof WaterHazardAPIError)) throw error
     return fallback
   }
+}
+
+/** 接口中的数值允许十进制字符串，拒绝空白、布尔和非有限值。 */
+export function numeric(value: unknown, field: string): number {
+  if (typeof value !== 'number' && !(typeof value === 'string' && /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(value.trim()))) throw new WaterHazardAPIError(`缺少合法 ${field}`)
+  const number = Number(value)
+  if (!Number.isFinite(number)) throw new WaterHazardAPIError(`缺少合法 ${field}`)
+  return number
 }
